@@ -1,0 +1,9 @@
+# Node / pnpm
+node_modules/
+.pnpm-store/
+*.log
+
+# Build output
+dist/
+dist-ssr/
+*.local

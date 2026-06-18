@@ -1,0 +1,25 @@
+# Giữ build context nhỏ: chỉ cần source + pom của các service backend.
+.git
+.gitignore
+.vscode
+.idea
+.claude
+docs
+*.md
+
+# Build output
+**/target
+
+# Frontend (chạy riêng bằng Vite, không build trong image backend)
+admin
+web
+node_modules
+**/node_modules
+pnpm-lock.yaml
+pnpm-workspace.yaml
+package.json
+
+# Hạ tầng không cần đưa vào image
+infra/postgres
+infra/nginx
+docker-compose.yml
