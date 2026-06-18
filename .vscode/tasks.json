@@ -1,0 +1,46 @@
+{
+  // =========================================================================
+  // Quản lý hạ tầng dev (docker compose) ngay trong VS Code.
+  // "infra: up" được launch.json gọi tự động trước khi chạy service.
+  // =========================================================================
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "infra: up",
+      "type": "shell",
+      "command": "docker compose up -d postgres redis kafka kafka-ui redisinsight pgadmin",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "infra: down",
+      "type": "shell",
+      "command": "docker compose down",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "infra: down + xoá data",
+      "type": "shell",
+      "command": "docker compose down -v",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "infra: logs",
+      "type": "shell",
+      "command": "docker compose logs -f",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "infra: ps",
+      "type": "shell",
+      "command": "docker compose ps",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

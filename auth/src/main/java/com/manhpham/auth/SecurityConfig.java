@@ -1,0 +1,33 @@
+package com.manhpham.auth;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.web.SecurityFilterChain;
+
+/**
+ * Cấu hình tạm cho giai đoạn skeleton: mở Swagger UI + Actuator health,
+ * các endpoint khác vẫn cần xác thực. Khi làm thật sẽ thay bằng JWT issue + rule chi tiết.
+ */
+@Configuration
+public class SecurityConfig {
+
+    @Bean
+    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**",
+                                "/actuator/health/**",
+                                "/actuator/info")
+                        .permitAll()
+                        .anyRequest().authenticated())
+                .httpBasic(Customizer.withDefaults());
+        return http.build();
+    }
+}

@@ -1,0 +1,11 @@
+{
+  // 9 service là các project Maven ĐỘC LẬP (không có parent pom chung) →
+  // khai báo rõ để Java extension import đủ, không bỏ sót project nào.
+  "java.import.maven.enabled": true,
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "maven.pomfile.globPattern": "**/pom.xml",
+  "files.exclude": {
+    "**/target": true
+  },
+  "java.compile.nullAnalysis.mode": "automatic"
+}
