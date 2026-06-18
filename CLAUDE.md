@@ -6,8 +6,8 @@ truy cập cùng lúc khi mở bán, tranh nhau tồn kho hữu hạn, tuyệt �
 bán trùng. Thanh toán qua Stripe.
 
 ## Ràng buộc kiến trúc (bất biến)
-- Kiến trúc **microservices**, triển khai **on-premise** (không dùng managed
-  cloud service), Spring Boot (JVM).
+- Kiến trúc **microservices**, triển khai **on-premise** trên **Kubernetes thuần
+  tự quản** (không dùng managed cloud service), Spring Boot (JVM).
 - **On-prem không autoscale** → phần cứng cố định, sizing cho throughput bền
   vững; Waiting Room hấp thụ spike. Đây là ràng buộc chi phối thiết kế.
 - **Database-per-service**: mỗi service sở hữu DB riêng (PostgreSQL). KHÔNG dùng
@@ -20,8 +20,12 @@ bán trùng. Thanh toán qua Stripe.
 
 ## Stack
 - Backend: Spring Boot
-- Gateway: Spring Cloud Gateway (validate JWT tại gateway)
-- Service discovery + config: Consul hoặc Kubernetes DNS
+- Gateway: Spring Cloud Gateway — **một service riêng** (`apigateway/`), chạy
+  **WebFlux/Netty thuần, TUYỆT ĐỐI KHÔNG add JPA/JDBC/DB** (blocking sẽ chẹn
+  event-loop lúc flash sale). Validate JWT tại gateway (chỉ verify chữ ký bằng
+  public key, không gọi Auth service mỗi request).
+- Service discovery + config: **K8s DNS + ConfigMap/Secret** (đã chọn K8s thuần
+  → KHÔNG dùng Consul). Service gọi nhau qua DNS nội bộ `http://<svc>:<port>`.
 - Hot path / cache / khóa: Redis (cluster hoặc Sentinel cho HA)
 - Nguồn sự thật: PostgreSQL (mỗi service một DB, có replication)
 - Message broker: Kafka (self-hosted)
@@ -38,9 +42,23 @@ bán trùng. Thanh toán qua Stripe.
 
 ## Danh sách service
 
-### Hạ tầng (Phase 0 — dựng trước)
-API Gateway, Service Discovery + Config, cụm PostgreSQL/Redis/Kafka,
-observability stack.
+> **Trạng thái:** 9/9 project skeleton đã tạo xong — `apigateway/`, `auth/`,
+> `catalog/`, `inventory/`, `order/`, `payment/`, `ticket/`, `notification/`,
+> `waitingroom/`. Không cần tạo thêm service nào, bước tiếp là code theo lát cắt
+> dọc (xem "Thứ tự triển khai").
+
+### Hạ tầng (Phase 0 — dựng trên K8s qua Operator/Helm, không phải project trong repo)
+Cụm PostgreSQL/Redis/Kafka (Operator: CloudNativePG, Redis Operator, Strimzi),
+Ingress Controller + MetalLB (on-prem không có cloud LB), observability stack
+(Prometheus/Grafana/Loki, OpenTelemetry). Webhook Stripe vào qua **Ingress rule
+riêng** trỏ thẳng Payment service, **bỏ qua apigateway** (đây là "reverse proxy
+DMZ"), verify chữ ký Stripe chứ không phải JWT.
+
+### 0. API Gateway service (`apigateway/`)
+Cửa vào duy nhất cho traffic nghiệp vụ. Spring Cloud Gateway (WebFlux). Route
+theo path → service qua K8s DNS, validate JWT, rate limit ở biên (Redis),
+circuit breaker (Resilience4j). KHÔNG có DB, KHÔNG business logic. Đứng sau
+Ingress. Dựng sớm cùng Phase 0.
 
 ### 1. Auth/User service
 Đăng ký, đăng nhập, phát JWT. Gateway dùng token để xác thực mọi request.
@@ -81,7 +99,8 @@ nguồn (và Stripe) chịu được, kèm CAPTCHA chống bot. Admission rate p
 tồn kho còn lại. Store chính: Redis. Làm CUỐI CÙNG.
 
 ## Thứ tự triển khai
-1. Phase 0: hạ tầng dùng chung.
+1. Phase 0: hạ tầng dùng chung (K8s + Operator cho PG/Redis/Kafka, Ingress +
+   MetalLB, observability) + API Gateway.
 2. Auth (1) + Catalog (2) — mở khóa phần còn lại.
 3. Lát cắt dọc happy path: Inventory (3, chỉ GA) → Payment (5, một tài khoản) →
    Order (4). Cột mốc: tiền chạy được end-to-end.
