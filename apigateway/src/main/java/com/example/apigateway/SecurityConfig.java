@@ -7,11 +7,6 @@ import org.springframework.security.config.annotation.web.reactive.EnableWebFlux
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 
-/**
- * Bảo mật biên cho gateway: chỉ verify chữ ký JWT (resource server), KHÔNG gọi
- * Auth service mỗi request. Health/probe của actuator để public để Nginx/K8s
- * kiểm tra được; còn lại bắt buộc có JWT hợp lệ.
- */
 @Configuration
 @EnableWebFluxSecurity
 public class SecurityConfig {

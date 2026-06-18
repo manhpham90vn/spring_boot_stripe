@@ -6,7 +6,7 @@
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
 		<version>4.1.0</version>
-		<relativePath/> <!-- lookup parent from repository -->
+		<relativePath/>
 	</parent>
 	<groupId>com.example</groupId>
 	<artifactId>apigateway</artifactId>
@@ -30,23 +30,19 @@
 		<java.version>21</java.version>
 	</properties>
 	<dependencies>
-		<!-- Spring Cloud Gateway (WebFlux/Netty). TUYỆT ĐỐI KHÔNG JPA/JDBC/DB. -->
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
 			<version>5.0.2</version>
 		</dependency>
-		<!-- Validate JWT tại biên: chỉ verify chữ ký bằng public key -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
 		</dependency>
-		<!-- Rate limit ở biên bằng Redis (reactive) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-redis-reactive</artifactId>
 		</dependency>
-		<!-- Circuit breaker / retry / rate limiter (Resilience4j cho Boot 4) -->
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-spring-boot4</artifactId>
@@ -58,7 +54,6 @@
 			<version>2.4.0</version>
 		</dependency>
 
-		<!-- Observability: Actuator + Prometheus + tracing OTel (CLAUDE.md) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>

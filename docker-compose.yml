@@ -156,11 +156,11 @@ services:
         condition: service_started
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin; do echo 'cho MinIO...'; sleep 2; done &&
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do echo 'waiting for MinIO...'; sleep 2; done &&
       mc mb -p local/event-images &&
       mc mb -p local/ticket-qr &&
       mc anonymous set download local/event-images &&
-      echo 'buckets san sang';
+      echo 'buckets ready';
       "
 
   apigateway:
@@ -348,6 +348,25 @@ services:
     ports:
       - "5174:5174"
 
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    container_name: ticketing-swagger-ui
+    restart: unless-stopped
+    environment:
+      BASE_URL: /swagger
+      URLS_PRIMARY_NAME: catalog
+      URLS: >-
+        [
+          {"name": "auth", "url": "/api-docs/auth"},
+          {"name": "catalog", "url": "/api-docs/catalog"},
+          {"name": "inventory", "url": "/api-docs/inventory"},
+          {"name": "order", "url": "/api-docs/order"},
+          {"name": "payment", "url": "/api-docs/payment"},
+          {"name": "ticket", "url": "/api-docs/ticket"},
+          {"name": "notification", "url": "/api-docs/notification"},
+          {"name": "waitingroom", "url": "/api-docs/waitingroom"}
+        ]
+
   nginx:
     image: nginx:1.27-alpine
     container_name: ticketing-nginx
@@ -357,6 +376,7 @@ services:
       - payment
       - web
       - admin
+      - swagger-ui
     ports:
       - "80:80"
     volumes:

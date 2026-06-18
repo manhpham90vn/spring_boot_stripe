@@ -6,7 +6,7 @@
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
 		<version>4.1.0</version>
-		<relativePath/> <!-- lookup parent from repository -->
+		<relativePath/>
 	</parent>
 	<groupId>com.manhpham</groupId>
 	<artifactId>notification</artifactId>
@@ -30,12 +30,10 @@
 		<java.version>21</java.version>
 	</properties>
 	<dependencies>
-		<!-- Gần như stateless: consume Kafka, gửi email/SMS. KHÔNG có DB. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
-		<!-- Consume event qua Spring Cloud Stream (Kafka binder) -->
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-stream-kafka</artifactId>
@@ -50,14 +48,12 @@
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
 
-		<!-- Swagger / OpenAPI UI: /swagger-ui.html , JSON: /v3/api-docs -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>3.0.3</version>
 		</dependency>
 
-		<!-- Observability: Actuator + Prometheus + tracing OTel (CLAUDE.md) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>

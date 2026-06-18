@@ -7,10 +7,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 
-/**
- * Cấu hình tạm cho giai đoạn skeleton: mở Swagger UI + Actuator health,
- * các endpoint khác vẫn cần xác thực. Khi làm thật sẽ thay bằng JWT issue + rule chi tiết.
- */
 @Configuration
 public class SecurityConfig {
 

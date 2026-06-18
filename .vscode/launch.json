@@ -1,14 +1,4 @@
 {
-  // =========================================================================
-  // Chạy từng service Spring Boot bằng Java extension (Run/Debug).
-  // - Mỗi service 1 cấu hình; "preLaunchTask" bật hạ tầng docker trước.
-  // - Port host gán sẵn (kể cả khi service chưa có web) để sau không đụng nhau,
-  //   tránh trùng port tooling: kafka-ui 8085, pgadmin 5050, redisinsight 5540.
-  // - Biến môi trường trỏ tới hạ tầng compose (Postgres/Redis/Kafka trên host).
-  //   Service-per-DB: mỗi service trỏ đúng database của mình.
-  // - "Tất cả service" (compound) chạy đồng loạt cả 9.
-  // Yêu cầu: cài extension "Extension Pack for Java".
-  // =========================================================================
   "version": "0.2.0",
   "configurations": [
     {
@@ -143,7 +133,7 @@
   ],
   "compounds": [
     {
-      "name": "Tất cả service",
+      "name": "All services",
       "configurations": [
         "apigateway",
         "auth",
