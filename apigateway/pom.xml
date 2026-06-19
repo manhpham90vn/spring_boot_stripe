@@ -8,7 +8,7 @@
 		<version>4.1.0</version>
 		<relativePath/>
 	</parent>
-	<groupId>com.example</groupId>
+	<groupId>com.manhpham</groupId>
 	<artifactId>apigateway</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name/>
@@ -30,30 +30,42 @@
 		<java.version>21</java.version>
 	</properties>
 	<dependencies>
+		<!-- ============================================================ -->
+		<!-- Gateway lõi (WebFlux/Netty thuần - TUYỆT ĐỐI không JPA/JDBC)  -->
+		<!-- ============================================================ -->
+		<!-- Spring Cloud Gateway reactive: route theo path tới service nội bộ. -->
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
 			<version>5.0.2</version>
 		</dependency>
+
+		<!-- ============================================================ -->
+		<!-- Bảo mật biên: verify JWT bằng public key (JWKS), không gọi Auth -->
+		<!-- ============================================================ -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
 		</dependency>
+
+		<!-- ============================================================ -->
+		<!-- Khả năng chịu tải biên: rate limit (Redis) + circuit breaker  -->
+		<!-- ============================================================ -->
+		<!-- Redis reactive: backend cho RequestRateLimiter (token bucket). -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-redis-reactive</artifactId>
 		</dependency>
+		<!-- Resilience4j reactive: circuit breaker + time limiter cho mỗi route. -->
 		<dependency>
-			<groupId>io.github.resilience4j</groupId>
-			<artifactId>resilience4j-spring-boot4</artifactId>
-			<version>2.4.0</version>
-		</dependency>
-		<dependency>
-			<groupId>io.github.resilience4j</groupId>
-			<artifactId>resilience4j-reactor</artifactId>
-			<version>2.4.0</version>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-circuitbreaker-reactor-resilience4j</artifactId>
+			<version>5.0.2</version>
 		</dependency>
 
+		<!-- ============================================================ -->
+		<!-- Observability (metrics + tracing)                           -->
+		<!-- ============================================================ -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
@@ -72,10 +84,21 @@
 			<artifactId>opentelemetry-exporter-otlp</artifactId>
 		</dependency>
 
+		<!-- ============================================================ -->
+		<!-- Test                                                         -->
+		<!-- ============================================================ -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
+		</dependency>
+		<!-- Hot reload: tự restart app khi target/classes thay đổi (dev-only,
+		     optional=true nên không lọt vào artifact build thật). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-devtools</artifactId>
+			<scope>runtime</scope>
+			<optional>true</optional>
 		</dependency>
 	</dependencies>
 

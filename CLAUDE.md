@@ -56,9 +56,9 @@ DMZ"), verify chữ ký Stripe chứ không phải JWT.
 
 ### 0. API Gateway service (`apigateway/`)
 Cửa vào duy nhất cho traffic nghiệp vụ. Spring Cloud Gateway (WebFlux). Route
-theo path → service qua K8s DNS, validate JWT, rate limit ở biên (Redis),
-circuit breaker (Resilience4j). KHÔNG có DB, KHÔNG business logic. Đứng sau
-Ingress. Dựng sớm cùng Phase 0.
+theo path → service qua K8s DNS, validateu
+Ingress. Dựng sớm cùng Phase 0. JWT, rate limit ở biên (Redis),
+circuit breaker (Resilience4j). KHÔNG có DB, KHÔNG business logic. Đứng sa
 
 ### 1. Auth/User service
 Đăng ký, đăng nhập, phát JWT. Gateway dùng token để xác thực mọi request.

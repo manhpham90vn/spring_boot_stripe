@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>4.1.0</version>
+		<relativePath/>
+	</parent>
+	<groupId>com.manhpham</groupId>
+	<artifactId>common-security</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>common-security</name>
+	<description>Shared JWT resource-server auto-configuration for servlet services.</description>
+
+	<properties>
+		<java.version>21</java.version>
+	</properties>
+
+	<dependencies>
+		<!-- Resource server (kéo theo spring-security-config/web + jwt). Để scope
+		     compile -> service nào add common-security là có luôn, không phải tự khai. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+		</dependency>
+		<!-- @AutoConfiguration, @ConditionalOnWebApplication... -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-autoconfigure</artifactId>
+		</dependency>
+		<!-- Sinh metadata cho app.security.* (gợi ý trong IDE/properties). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-configuration-processor</artifactId>
+			<optional>true</optional>
+		</dependency>
+	</dependencies>
+
+	<!-- Cố tình KHÔNG có spring-boot-maven-plugin: đây là thư viện jar thường,
+	     không repackage thành executable. -->
+</project>

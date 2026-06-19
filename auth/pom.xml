@@ -30,35 +30,42 @@
 		<java.version>21</java.version>
 	</properties>
 	<dependencies>
+		<!-- ============================================================ -->
+		<!-- Web & API REST                                               -->
+		<!-- ============================================================ -->
+		<!-- Spring MVC + Tomcat: expose REST API (đăng ký, đăng nhập...). -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-security</artifactId>
-		</dependency>
+		<!-- Bean Validation (JSR-380 / Hibernate Validator): validate request body. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
+		<!-- Swagger UI / OpenAPI: tài liệu hoá API. -->
 		<dependency>
-			<groupId>org.postgresql</groupId>
-			<artifactId>postgresql</artifactId>
-			<scope>runtime</scope>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>3.0.3</version>
 		</dependency>
+
+		<!-- ============================================================ -->
+		<!-- Bảo mật & JWT                                                -->
+		<!-- ============================================================ -->
+		<!-- Spring Security: xác thực/phân quyền, mã hoá mật khẩu. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-flyway</artifactId>
+			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+		<!-- Resource server: verify Bearer JWT cho các endpoint cần đăng nhập
+		     (vd /api/auth/me). Auth tự verify bằng public key của chính nó
+		     (issuer + chữ ký + hạn) - độc lập với việc gateway verify ở biên. -->
 		<dependency>
-			<groupId>org.flywaydb</groupId>
-			<artifactId>flyway-database-postgresql</artifactId>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
 		</dependency>
+		<!-- JJWT: phát hành & ký JWT (gateway verify bằng public key). -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
@@ -77,21 +84,45 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<!-- ============================================================ -->
+		<!-- Truy cập dữ liệu (PostgreSQL + JPA + Flyway)                 -->
+		<!-- ============================================================ -->
+		<!-- Spring Data JPA / Hibernate: ORM cho DB riêng của Auth. -->
 		<dependency>
-			<groupId>org.springdoc</groupId>
-			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>3.0.3</version>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+		</dependency>
+		<!-- Driver PostgreSQL (nguồn sự thật của service). -->
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<!-- Flyway: quản lý migration schema (Boot 4 cần module riêng). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
 
+		<!-- ============================================================ -->
+		<!-- Observability (metrics + tracing)                           -->
+		<!-- ============================================================ -->
+		<!-- Actuator: health check, endpoint vận hành. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!-- Prometheus: xuất metrics. -->
 		<dependency>
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-registry-prometheus</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+		<!-- Micrometer Tracing + OTLP exporter: distributed tracing (OpenTelemetry). -->
 		<dependency>
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-tracing-bridge-otel</artifactId>
@@ -101,10 +132,28 @@
 			<artifactId>opentelemetry-exporter-otlp</artifactId>
 		</dependency>
 
+		<!-- ============================================================ -->
+		<!-- Tiện ích & Test                                              -->
+		<!-- ============================================================ -->
+		<!-- Lombok: giảm boilerplate; version do Spring Boot BOM quản lý. -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<optional>true</optional>
+		</dependency>
+		<!-- Bộ test chuẩn của Spring Boot (JUnit, Mockito, AssertJ...). -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
+		</dependency>
+		<!-- Hot reload: tự restart app khi target/classes thay đổi (dev-only,
+		     optional=true nên không lọt vào artifact build thật). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-devtools</artifactId>
+			<scope>runtime</scope>
+			<optional>true</optional>
 		</dependency>
 	</dependencies>
 

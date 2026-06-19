@@ -2,6 +2,7 @@ package com.manhpham.auth.handle;
 
 import com.manhpham.auth.utils.exception.EmailAlreadyUsedException;
 import com.manhpham.auth.utils.exception.InvalidCredentialsException;
+import com.manhpham.auth.utils.exception.UserNotFoundException;
 import com.manhpham.auth.utils.response.ApiError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +27,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleInvalidCredentials(InvalidCredentialsException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ApiError.of(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<ApiError> handleUserNotFound(UserNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiError.of(HttpStatus.NOT_FOUND.value(), "Not Found", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

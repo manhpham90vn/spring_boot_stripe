@@ -14,11 +14,27 @@ x-spring-env: &spring-env
   SPRING_DATA_REDIS_PORT: "6379"
   SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS: kafka:29092
 
+x-app-healthcheck: &app-healthcheck
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 120s
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: ticketing-postgres
     restart: unless-stopped
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_slot_wal_keep_size=8GB"
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
@@ -77,48 +93,56 @@ services:
       timeout: 10s
       retries: 10
 
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: ticketing-kafka-ui
+  connect:
+    image: quay.io/debezium/connect:2.7
+    container_name: ticketing-connect
     restart: unless-stopped
     depends_on:
       kafka:
         condition: service_healthy
     ports:
-      - "8085:8080"
+      - "8085:8083"
     environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
-      DYNAMIC_CONFIG_ENABLED: "true"
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
-  redisinsight:
-    image: redis/redisinsight:latest
-    container_name: ticketing-redisinsight
-    restart: unless-stopped
+  connect-init:
+    image: curlimages/curl:latest
+    container_name: ticketing-connect-init
+    restart: "no"
     depends_on:
-      redis:
+      connect:
         condition: service_healthy
-    ports:
-      - "5540:5540"
+      auth:
+        condition: service_started
     volumes:
-      - redisinsight-data:/data
-
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: ticketing-pgadmin
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "5050:80"
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@local.dev
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: "False"
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
-    volumes:
-      - pgadmin-data:/var/lib/pgadmin
+      - ./infra/debezium:/config:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until curl -sf http://connect:8083/ >/dev/null; do echo 'waiting for connect...'; sleep 3; done
+        until curl -sf http://auth:8081/actuator/health >/dev/null; do echo 'waiting for auth (outbox table)...'; sleep 3; done
+        code=$$(curl -s -o /tmp/resp -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+          --data @/config/auth-outbox-connector.json http://connect:8083/connectors)
+        echo "register auth-outbox-connector -> HTTP $$code"; cat /tmp/resp; echo
+        [ "$$code" = "201" ] || [ "$$code" = "409" ]
 
   mailpit:
     image: axllent/mailpit:latest
@@ -180,9 +204,12 @@ services:
       ROUTE_WAITINGROOM_URI: http://waitingroom:8089
     volumes:
       - ./apigateway:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8080:8080"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
 
   auth:
     <<: *app
@@ -195,9 +222,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth
     volumes:
       - ./auth:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8081:8081"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/actuator/health || exit 1"]
 
   catalog:
     <<: *app
@@ -212,9 +242,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalog
     volumes:
       - ./catalog:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8082:8082"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/actuator/health || exit 1"]
 
   inventory:
     <<: *app
@@ -231,9 +264,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/inventory
     volumes:
       - ./inventory:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8083:8083"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/actuator/health || exit 1"]
 
   order:
     <<: *app
@@ -250,9 +286,12 @@ services:
       SERVICES_PAYMENT_URL: http://payment:8086
     volumes:
       - ./order:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8084:8084"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8084/actuator/health || exit 1"]
 
   payment:
     <<: *app
@@ -269,9 +308,12 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_dummy}
     volumes:
       - ./payment:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8086:8086"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8086/actuator/health || exit 1"]
 
   ticket:
     <<: *app
@@ -286,9 +328,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ticket
     volumes:
       - ./ticket:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8087:8087"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8087/actuator/health || exit 1"]
 
   notification:
     <<: *app
@@ -302,9 +347,12 @@ services:
       SPRING_MAIL_PORT: "1025"
     volumes:
       - ./notification:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8088:8088"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/actuator/health || exit 1"]
 
   waitingroom:
     <<: *app
@@ -316,37 +364,12 @@ services:
       <<: *spring-env
     volumes:
       - ./waitingroom:/workspace
-      - maven-cache:/root/.m2
+      - maven-cache:/home/app/.m2
     ports:
       - "8089:8089"
-
-  web:
-    build:
-      context: .
-      dockerfile: infra/docker/Dockerfile.node
-    image: ticketing-node-dev:latest
-    container_name: ticketing-web
-    restart: unless-stopped
-    command: sh -c "pnpm install && pnpm dev --host 0.0.0.0 --port 5173"
-    volumes:
-      - ./web:/app
-      - web-node-modules:/app/node_modules
-    ports:
-      - "5173:5173"
-
-  admin:
-    build:
-      context: .
-      dockerfile: infra/docker/Dockerfile.node
-    image: ticketing-node-dev:latest
-    container_name: ticketing-admin
-    restart: unless-stopped
-    command: sh -c "pnpm install && pnpm dev --host 0.0.0.0 --port 5174"
-    volumes:
-      - ./admin:/app
-      - admin-node-modules:/app/node_modules
-    ports:
-      - "5174:5174"
+    healthcheck:
+      <<: *app-healthcheck
+      test: ["CMD-SHELL", "curl -sf http://localhost:8089/actuator/health || exit 1"]
 
   swagger-ui:
     image: swaggerapi/swagger-ui:latest
@@ -371,12 +394,6 @@ services:
     image: nginx:1.27-alpine
     container_name: ticketing-nginx
     restart: unless-stopped
-    depends_on:
-      - apigateway
-      - payment
-      - web
-      - admin
-      - swagger-ui
     ports:
       - "80:80"
     volumes:
@@ -389,7 +406,5 @@ volumes:
   postgres-data:
   redis-data:
   kafka-data:
-  redisinsight-data:
-  pgadmin-data:
   mailpit-data:
   minio-data:

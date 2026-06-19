@@ -5,6 +5,7 @@ import com.manhpham.auth.config.JwtProperties;
 import com.manhpham.auth.entities.User;
 import com.manhpham.auth.services.JwtService;
 import io.jsonwebtoken.Jwts;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -14,15 +15,11 @@ import java.util.List;
 
 /** Issues signed RS256 access tokens. */
 @Service
+@RequiredArgsConstructor
 public class JwtServiceImpl implements JwtService {
 
     private final JwtKeys keys;
     private final JwtProperties properties;
-
-    public JwtServiceImpl(JwtKeys keys, JwtProperties properties) {
-        this.keys = keys;
-        this.properties = properties;
-    }
 
     @Override
     public IssuedToken issueAccessToken(User user) {
