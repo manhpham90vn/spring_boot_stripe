@@ -26,6 +26,9 @@ public class OutboxEventSender {
      * transaction so the event and the business change commit atomically.
      */
     public void fire(OutboxEvent<?> event) {
+        // CHỈ ghi event xuống bảng outbox (cùng transaction với thay đổi nghiệp vụ) —
+        // KHÔNG tự đẩy lên Kafka ở đây. Debezium đọc WAL của Postgres rồi mới publish.
+        // Nhờ commit chung 1 transaction: thay đổi nghiệp vụ và event không bao giờ lệch nhau.
         repository.save(OutboxEventEntity.create(
                 event.getAggregateType(),
                 event.getAggregateId(),

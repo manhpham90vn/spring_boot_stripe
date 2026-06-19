@@ -29,6 +29,9 @@ public class OutboxPurgeJob {
         this.retention = retention;
     }
 
+    // Mặc định chạy 3h sáng mỗi ngày. Chỉ DỌN RÁC, không liên quan tới việc phát event:
+    // xoá row cũ hơn retention cho bảng outbox khỏi phình. An toàn vì row đã commit nằm
+    // trong WAL — replication slot giữ WAL tới khi Debezium đọc xong, không sợ mất event.
     @Scheduled(cron = "${auth.outbox.purge-cron:0 0 3 * * *}")
     @Transactional
     public void purge() {

@@ -31,12 +31,17 @@ public class JwtKeys {
     private final String keyId;
 
     public JwtKeys(JwtProperties properties, ResourceLoader resourceLoader) {
+        // Xác định nguồn khoá theo độ ưu tiên:
+        //   fromLocation = có đường dẫn file PEM (cả private lẫn public) → đọc từ file/secret.
+        //   inline       = có PEM nhồi thẳng vào property.
+        //   configured   = một trong hai → dùng khoá CỐ ĐỊNH; nếu không, tự sinh khoá tạm.
         boolean fromLocation = StringUtils.hasText(properties.getPrivateKeyLocation())
                 && StringUtils.hasText(properties.getPublicKeyLocation());
         boolean inline = StringUtils.hasText(properties.getPrivateKey())
                 && StringUtils.hasText(properties.getPublicKey());
         boolean configured = fromLocation || inline;
 
+        // Lấy nội dung PEM: ưu tiên đọc từ file (fromLocation), ngược lại lấy chuỗi inline.
         String privateKeyPem = fromLocation
                 ? readPem(resourceLoader, properties.getPrivateKeyLocation())
                 : properties.getPrivateKey();
@@ -44,11 +49,16 @@ public class JwtKeys {
                 ? readPem(resourceLoader, properties.getPublicKeyLocation())
                 : properties.getPublicKey();
 
+        // Có cấu hình → parse cặp khoá từ PEM. Không có gì → SINH khoá RSA tạm (xem cảnh báo dưới).
         KeyPair keyPair = configured
                 ? loadFromPem(privateKeyPem, publicKeyPem)
                 : generateRsaKeyPair();
 
         this.privateKey = keyPair.getPrivate();
+        // Bọc public key thành JWK. idFromThumbprint() sinh kid = băm (thumbprint) của
+        // chính public key → kid mang tính tất định: cùng một key luôn ra cùng một kid.
+        // Nhờ vậy kid gắn vào token khi ký (JwtServiceImpl) chắc chắn khớp kid trong JWKS,
+        // không cần tự đặt tên/đồng bộ thủ công.
         this.publicJwk = Jwks.builder()
                 .key((RSAPublicKey) keyPair.getPublic())
                 .idFromThumbprint()

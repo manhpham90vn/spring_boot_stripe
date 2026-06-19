@@ -52,6 +52,14 @@ public class ResourceServerAutoConfiguration {
             "/swagger-ui/**"
     };
 
+    /**
+     * Tên claim chứa danh sách role trong JWT, và prefix mà Spring Security quy ước
+     * cho authority ({@code USER} → {@code ROLE_USER}). Quy ước này phải KHỚP với phía
+     * phát token (Auth) và với gateway (apigateway/SecurityConfig) — sửa đây nhớ sửa cả đó.
+     */
+    private static final String ROLES_CLAIM = "roles";
+    private static final String ROLE_PREFIX = "ROLE_";
+
     @Bean
     @ConditionalOnMissingBean
     public SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http,
@@ -62,33 +70,63 @@ public class ResourceServerAutoConfiguration {
                 .toArray(String[]::new);
 
         http
+                // API stateless: không session, không CSRF (CSRF chỉ có ý nghĩa với cookie/session).
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Path hạ tầng + path public riêng của service thì cho qua...
                         .requestMatchers(publicPaths).permitAll()
+                        // ...còn lại bắt buộc JWT hợp lệ (kể cả khi bị gọi thẳng trong cluster).
                         .anyRequest().authenticated())
+                // Bật resource-server: verify Bearer JWT bằng jwtDecoder bên dưới, rồi
+                // chuyển claim "roles" thành authority để @PreAuthorize/hasRole hoạt động.
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                         jwt.jwtAuthenticationConverter(rolesAuthenticationConverter())));
         return http.build();
     }
 
+    /**
+     * Decoder verify JWT CỤC BỘ tại mỗi service. Một dòng {@code withJwkSetUri(...)}
+     * của Spring Security nhìn như "magic" nhưng nó tự động làm các bước sau:
+     *
+     * <ol>
+     *   <li>Đọc header JWT, lấy {@code kid} (id của key đã ký token).</li>
+     *   <li>Tải JWKS (tập public key) từ {@code jwk-set-uri} của Auth và CACHE lại
+     *       → KHÔNG gọi Auth cho từng request (yêu cầu cốt lõi của kiến trúc này).</li>
+     *   <li>Chọn đúng public key theo {@code kid} rồi verify CHỮ KÝ RS256.</li>
+     *   <li>{@code JwtValidators.createDefault()}: kiểm tra hạn ({@code exp}) và thời
+     *       điểm hiệu lực ({@code nbf}/{@code iat}).</li>
+     *   <li>{@code JwtIssuerValidator}: kiểm tra claim {@code iss} đúng là Auth của ta.</li>
+     * </ol>
+     *
+     * <p>Vì danh tính đến từ token đã xác thực bằng mật mã (không tin header do client/
+     * gateway gắn vào), service vẫn an toàn dù bị gọi thẳng trong cluster.
+     *
+     * <p>{@code @ConditionalOnMissingBean}: service nào muốn tự cấu hình decoder riêng
+     * chỉ cần khai một bean {@code JwtDecoder} của mình — bean mặc định này sẽ tự nhường.
+     */
     @Bean
     @ConditionalOnMissingBean
     public JwtDecoder jwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
             ResourceServerProperties props) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        // Ghép validator mặc định (hạn token) với validator issuer (đúng người phát).
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<Jwt>(
                 JwtValidators.createDefault(),
                 new JwtIssuerValidator(props.getIssuer())));
         return decoder;
     }
 
-    /** Map claim {@code roles} (vd {@code ["USER"]}) sang authority {@code ROLE_USER}. */
+    /**
+     * Chuyển claim {@code roles} trong token (vd {@code ["USER"]}) thành authority mà
+     * Spring Security hiểu để phân quyền: {@code USER} → {@code ROLE_USER}.
+     * (Bản servlet; bản Reactive tương đương nằm ở apigateway/SecurityConfig.)
+     */
     private static JwtAuthenticationConverter rolesAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
-        authorities.setAuthoritiesClaimName("roles");
-        authorities.setAuthorityPrefix("ROLE_");
+        authorities.setAuthoritiesClaimName(ROLES_CLAIM);
+        authorities.setAuthorityPrefix(ROLE_PREFIX);
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(authorities);
         return converter;
