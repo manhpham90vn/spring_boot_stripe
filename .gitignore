@@ -7,3 +7,6 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+
+# Generated JWT signing keys (never commit secrets)
+infra/keys/*.pem

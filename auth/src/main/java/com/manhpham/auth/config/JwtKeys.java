@@ -3,9 +3,13 @@ package com.manhpham.auth.config;
 import io.jsonwebtoken.security.Jwks;
 import io.jsonwebtoken.security.PublicJwk;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StreamUtils;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -26,12 +30,22 @@ public class JwtKeys {
     private final PublicJwk<RSAPublicKey> publicJwk;
     private final String keyId;
 
-    public JwtKeys(JwtProperties properties) {
-        boolean configured = StringUtils.hasText(properties.getPrivateKey())
+    public JwtKeys(JwtProperties properties, ResourceLoader resourceLoader) {
+        boolean fromLocation = StringUtils.hasText(properties.getPrivateKeyLocation())
+                && StringUtils.hasText(properties.getPublicKeyLocation());
+        boolean inline = StringUtils.hasText(properties.getPrivateKey())
                 && StringUtils.hasText(properties.getPublicKey());
+        boolean configured = fromLocation || inline;
+
+        String privateKeyPem = fromLocation
+                ? readPem(resourceLoader, properties.getPrivateKeyLocation())
+                : properties.getPrivateKey();
+        String publicKeyPem = fromLocation
+                ? readPem(resourceLoader, properties.getPublicKeyLocation())
+                : properties.getPublicKey();
 
         KeyPair keyPair = configured
-                ? loadFromPem(properties.getPrivateKey(), properties.getPublicKey())
+                ? loadFromPem(privateKeyPem, publicKeyPem)
                 : generateRsaKeyPair();
 
         this.privateKey = keyPair.getPrivate();
@@ -66,6 +80,18 @@ public class JwtKeys {
     /** JWKS document body: {@code {"keys": [ <public jwk> ]}}. */
     public Map<String, Object> jwkSet() {
         return Map.of("keys", List.of(publicJwk));
+    }
+
+    private static String readPem(ResourceLoader resourceLoader, String location) {
+        Resource resource = resourceLoader.getResource(location);
+        if (!resource.exists()) {
+            throw new IllegalStateException("JWT key resource not found: " + location);
+        }
+        try {
+            return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to read JWT key resource: " + location, e);
+        }
     }
 
     private static KeyPair loadFromPem(String privateKeyPem, String publicKeyPem) {

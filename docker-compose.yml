@@ -211,17 +211,44 @@ services:
       <<: *app-healthcheck
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
 
+  jwt-keys-init:
+    image: alpine:3.20
+    container_name: ticketing-jwt-keys-init
+    restart: "no"
+    volumes:
+      - ./infra/keys:/keys
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache openssl >/dev/null
+        if [ -f /keys/jwt-private.pem ] && [ -f /keys/jwt-public.pem ]; then
+          echo 'JWT keys already present, skipping.'
+        else
+          echo 'Generating RSA JWT key pair...'
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /keys/jwt-private.pem
+          openssl pkey -in /keys/jwt-private.pem -pubout -out /keys/jwt-public.pem
+          chmod 644 /keys/jwt-private.pem /keys/jwt-public.pem
+          echo 'JWT keys generated.'
+        fi
+
   auth:
     <<: *app
     container_name: ticketing-auth
     depends_on:
       postgres:
         condition: service_healthy
+      jwt-keys-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth
+      AUTH_JWT_PRIVATE_KEY_LOCATION: file:/keys/jwt-private.pem
+      AUTH_JWT_PUBLIC_KEY_LOCATION: file:/keys/jwt-public.pem
     volumes:
       - ./auth:/workspace
+      - ./infra/keys:/keys:ro
       - maven-cache:/home/app/.m2
     ports:
       - "8081:8081"
