@@ -187,9 +187,6 @@ services:
       echo 'buckets ready';
       "
 
-  # Cài common-security (lib dùng chung) vào maven-cache TRƯỚC khi service nào
-  # phụ thuộc nó build. Volume bị xoá (down -v) thì init chạy lại, không phải
-  # cài tay nữa. Mọi service add common-security phải depends_on init này.
   common-security-init:
     image: ticketing-dev:latest
     container_name: ticketing-common-security-init
@@ -281,7 +278,6 @@ services:
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalog
-      # Resource server verify JWT cục bộ bằng JWKS của Auth (không gọi Auth mỗi request).
       JWK_SET_URI: http://auth:8081/internal/jwks
       JWT_ISSUER: auth
     volumes:
