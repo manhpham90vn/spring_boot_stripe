@@ -176,13 +176,16 @@ Chỉ thêm cái **thực sự dùng**. Bài học: producer event **không** c�
 | `event_type` | header `eventType` (discriminator) |
 | `payload` (TEXT JSON) | message **value** (expand JSON) |
 | `id` | event id (idempotency phía consumer) |
-| `created_at` | event timestamp |
+| `created_at` | **chỉ housekeeping** (để `OutboxPurgeJob` dọn) — KHÔNG map làm event timestamp của router: cột là `TIMESTAMPTZ`, còn `table.field.event.timestamp` đòi `INT64` → map vào sẽ làm task connector FAILED |
 
 Code mẫu (auth): `core/dto/OutboxEvent` (base) → `event/<X>OutboxEvent` (typed wrapper,
 khai báo aggregateType/Id/eventType) → `event/<X>Event` (record payload) →
 `OutboxEventSender.fire()` → `entities/OutboxEventEntity`/bảng `outbox`.
 Connector: `infra/debezium/<svc>-outbox-connector.json` (compose) và
 `<svc>/deploy/debezium/<svc>-outbox-connector.yaml` (Strimzi/K8s).
+
+> 📖 **Chi tiết đầy đủ + quy ước mở rộng** (thêm event/producer/consumer mới, cạm bẫy,
+> lệnh debug): [`outbox-debezium.md`](./outbox-debezium.md).
 
 **Bên NHẬN (consumer) — dùng Spring Cloud Stream functional binder:**
 

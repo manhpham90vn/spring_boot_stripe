@@ -129,8 +129,12 @@ services:
     depends_on:
       connect:
         condition: service_healthy
+      # Mỗi service PRODUCER (có bảng outbox + 1 file connector trong infra/debezium/)
+      # phải healthy TRƯỚC khi đăng ký, để publication được tạo trên bảng outbox đã tồn
+      # tại. THÊM PRODUCER MỚI: (1) thả infra/debezium/<svc>-outbox-connector.json, và
+      # (2) thêm một dòng "<svc>: { condition: service_healthy }" vào đây.
       auth:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./infra/debezium:/config:ro
     entrypoint:
@@ -138,11 +142,20 @@ services:
       - -c
       - |
         until curl -sf http://connect:8083/ >/dev/null; do echo 'waiting for connect...'; sleep 3; done
-        until curl -sf http://auth:8081/actuator/health >/dev/null; do echo 'waiting for auth (outbox table)...'; sleep 3; done
-        code=$$(curl -s -o /tmp/resp -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-          --data @/config/auth-outbox-connector.json http://connect:8083/connectors)
-        echo "register auth-outbox-connector -> HTTP $$code"; cat /tmp/resp; echo
-        [ "$$code" = "201" ] || [ "$$code" = "409" ]
+        # Drop-a-file: tự đăng ký MỌI connector trong /config. Tên file = tên connector.
+        # 201 = tạo mới, 409 = đã tồn tại (đều OK, idempotent); mã khác = lỗi → exit != 0.
+        rc=0
+        for f in /config/*.json; do
+          name=$$(basename "$$f" .json)
+          code=$$(curl -s -o /tmp/resp -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+            --data @"$$f" http://connect:8083/connectors)
+          echo "register $$name -> HTTP $$code"; cat /tmp/resp; echo
+          case "$$code" in
+            201|409) ;;
+            *) echo "  !! $$name dang ky that bai"; rc=1 ;;
+          esac
+        done
+        exit $$rc
 
   mailpit:
     image: axllent/mailpit:latest

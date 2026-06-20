@@ -57,6 +57,14 @@ req() {
   curl "${args[@]}" 2>/dev/null || echo "000"
 }
 
+# req_retry: như req nhưng thử lại 1 lần nếu gặp 429 (route /api/auth bị rate-limit ở
+# gateway ~5 req/s). Tránh smoke-test bị flaky khi bắn nhiều request auth liên tiếp.
+req_retry() {
+  local s; s="$(req "$@")"
+  if [ "$s" = "429" ]; then sleep 2; s="$(req "$@")"; fi
+  echo "$s"
+}
+
 # expect DESC EXPECTED ACTUAL
 expect() {
   if [ "$3" = "$2" ]; then pass "$1 ${DIM}($3)${NC}"; else fail "$1 — mong đợi $2, nhận $3"; fi
@@ -110,11 +118,11 @@ done
 section "Auth: đăng ký → đăng nhập → /me"
 EMAIL="smoke+$(date +%s)-${RANDOM}@example.com"
 
-st="$(req POST "$BASE_URL/api/auth/public/register" \
+st="$(req_retry POST "$BASE_URL/api/auth/public/register" \
   "{\"email\":\"$EMAIL\",\"password\":\"$TEST_PASSWORD\"}")"
 expect "Đăng ký user mới" 201 "$st"
 
-st="$(req POST "$BASE_URL/api/auth/public/login" \
+st="$(req_retry POST "$BASE_URL/api/auth/public/login" \
   "{\"email\":\"$EMAIL\",\"password\":\"$TEST_PASSWORD\"}")"
 expect "Đăng nhập" 200 "$st"
 TOKEN="$(extract accessToken)"
@@ -126,6 +134,29 @@ if [ "$st" = "200" ] && body_has "$EMAIL"; then
 else
   fail "/me với token hợp lệ — mong đợi 200 + email, nhận $st"
 fi
+
+# --- 2b) Auth: xử lý lỗi đúng (GlobalExceptionHandler + chống dò tài khoản) --
+section "Auth: validate & lỗi"
+
+st="$(req_retry POST "$BASE_URL/api/auth/public/register" \
+  "{\"email\":\"$EMAIL\",\"password\":\"$TEST_PASSWORD\"}")"
+expect "Đăng ký trùng email → 409" 409 "$st"
+
+st="$(req_retry POST "$BASE_URL/api/auth/public/register" \
+  '{"email":"khong-phai-email","password":"Test1234!"}')"
+expect "Đăng ký email sai định dạng → 400" 400 "$st"
+
+st="$(req_retry POST "$BASE_URL/api/auth/public/register" \
+  "{\"email\":\"short+$RANDOM@example.com\",\"password\":\"123\"}")"
+expect "Đăng ký mật khẩu quá ngắn → 400" 400 "$st"
+
+st="$(req_retry POST "$BASE_URL/api/auth/public/login" \
+  "{\"email\":\"$EMAIL\",\"password\":\"SaiMatKhau!\"}")"
+expect "Đăng nhập sai mật khẩu → 401" 401 "$st"
+
+st="$(req_retry POST "$BASE_URL/api/auth/public/login" \
+  "{\"email\":\"khongton-tai+$RANDOM@example.com\",\"password\":\"$TEST_PASSWORD\"}")"
+expect "Đăng nhập email không tồn tại → 401 (giống sai mật khẩu, chống dò)" 401 "$st"
 
 # --- 3) Phân biệt PUBLIC vs CẦN-JWT (đúng quy ước path) ---------------------
 section "Bảo mật: public vs cần-token"
@@ -142,6 +173,16 @@ expect "GET /me KHÔNG token bị chặn" 401 "$st"
 st="$(req GET "$BASE_URL/api/auth/me" "" "rac.khong.hop.le")"
 expect "GET /me token rác bị chặn" 401 "$st"
 
+# --- 3b) Catalog: not-found ánh xạ đúng 404 ---------------------------------
+section "Catalog: not-found"
+MISSING_UUID="00000000-0000-0000-0000-000000000000"
+
+st="$(req GET "$BASE_URL/api/catalog/public/events/$MISSING_UUID")"
+expect "GET event không tồn tại → 404" 404 "$st"
+
+st="$(req GET "$BASE_URL/api/catalog/public/venues/$MISSING_UUID")"
+expect "GET venue không tồn tại → 404" 404 "$st"
+
 # --- 4) Phân quyền ADMIN ----------------------------------------------------
 section "Bảo mật: khu admin"
 
@@ -151,19 +192,69 @@ expect "POST admin KHÔNG token → 401 (chặn ở biên)" 401 "$st"
 st="$(req POST "$BASE_URL/api/catalog/admin/venues" '{"name":"smoke"}' "$TOKEN")"
 expect "POST admin bằng token USER → 403 (chặn ở service)" 403 "$st"
 
+# GET trong khu admin cũng phải bị chặn (luật admin không lọc theo method — điểm
+# tinh tế: GET danh sách admin KHÁC GET public, vẫn cần ADMIN).
+st="$(req GET "$BASE_URL/api/catalog/admin/events")"
+expect "GET admin KHÔNG token → 401" 401 "$st"
+
+st="$(req GET "$BASE_URL/api/catalog/admin/events" "" "$TOKEN")"
+expect "GET admin bằng token USER → 403" 403 "$st"
+
+# --- 4b) Happy-path ADMIN: vòng đời catalog đầy đủ (tự dọn) ------------------
 if [ -n "$ADMIN_EMAIL" ] && [ -n "$ADMIN_PASSWORD" ]; then
-  st="$(req POST "$BASE_URL/api/auth/public/login" \
+  section "Catalog: vòng đời đầy đủ bằng ADMIN"
+  st="$(req_retry POST "$BASE_URL/api/auth/public/login" \
     "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")"
   ADMIN_TOKEN="$(extract accessToken)"
   if [ "$st" = "200" ] && [ -n "$ADMIN_TOKEN" ]; then
     pass "Đăng nhập ADMIN"
+
     st="$(req POST "$BASE_URL/api/catalog/admin/venues" \
       '{"name":"Smoke Venue","address":"1 Test St","city":"Hanoi"}' "$ADMIN_TOKEN")"
-    expect "POST admin bằng token ADMIN → 201" 201 "$st"
+    expect "Tạo venue → 201" 201 "$st"
     VENUE_ID="$(extract id)"
+
+    EVENT_ID=""
+    if [ -n "$VENUE_ID" ]; then
+      st="$(req POST "$BASE_URL/api/catalog/admin/events" \
+        "{\"venueId\":\"$VENUE_ID\",\"title\":\"Smoke Concert\",\"startsAt\":\"2030-01-01T00:00:00Z\"}" \
+        "$ADMIN_TOKEN")"
+      expect "Tạo event (DRAFT) → 201" 201 "$st"
+      EVENT_ID="$(extract id)"
+    fi
+
+    if [ -n "$EVENT_ID" ]; then
+      st="$(req POST "$BASE_URL/api/catalog/admin/events/$EVENT_ID/ticket-types" \
+        '{"name":"GA","priceMinor":100000,"currency":"USD","maxPerOrder":4}' "$ADMIN_TOKEN")"
+      expect "Thêm ticket-type → 201" 201 "$st"
+
+      st="$(req GET "$BASE_URL/api/catalog/public/events/$EVENT_ID")"
+      expect "GET chi tiết event vừa tạo → 200" 200 "$st"
+
+      st="$(req PUT "$BASE_URL/api/catalog/admin/events/$EVENT_ID/status" \
+        '{"status":"ON_SALE"}' "$ADMIN_TOKEN")"
+      expect "Đổi trạng thái ON_SALE → 200" 200 "$st"
+
+      # Sau ON_SALE, event phải xuất hiện ở danh sách công khai (kiểm cache evict).
+      st="$(req GET "$BASE_URL/api/catalog/public/events")"
+      if [ "$st" = "200" ] && body_has "$EVENT_ID"; then
+        pass "Event ON_SALE xuất hiện ở danh sách public ${DIM}(cache evict OK)${NC}"
+      else
+        fail "Event ON_SALE KHÔNG thấy ở danh sách public (status $st)"
+      fi
+
+      # Đưa về DRAFT để được hard-delete (dọn sạch, không để rác CANCELLED).
+      st="$(req PUT "$BASE_URL/api/catalog/admin/events/$EVENT_ID/status" \
+        '{"status":"DRAFT"}' "$ADMIN_TOKEN")"
+      expect "Đổi trạng thái về DRAFT → 200" 200 "$st"
+
+      st="$(req DELETE "$BASE_URL/api/catalog/admin/events/$EVENT_ID" "" "$ADMIN_TOKEN")"
+      expect "Xóa event (dọn dẹp) → 204" 204 "$st"
+    fi
+
     if [ -n "$VENUE_ID" ]; then
       st="$(req DELETE "$BASE_URL/api/catalog/admin/venues/$VENUE_ID" "" "$ADMIN_TOKEN")"
-      expect "DELETE venue vừa tạo (dọn dẹp) → 204" 204 "$st"
+      expect "Xóa venue (dọn dẹp) → 204" 204 "$st"
     fi
   else
     fail "Đăng nhập ADMIN thất bại (status $st) — bỏ qua happy-path admin"
@@ -171,6 +262,16 @@ if [ -n "$ADMIN_EMAIL" ] && [ -n "$ADMIN_PASSWORD" ]; then
 else
   printf "  ${DIM}• Bỏ qua happy-path ADMIN (đặt ADMIN_EMAIL/ADMIN_PASSWORD để bật)${NC}\n"
 fi
+
+# --- 4c) Routing / edge: path lạ trả 404 ------------------------------------
+section "Routing: path lạ → 404"
+
+st="$(req GET "$BASE_URL/khong-ton-tai-gi-ca")"
+expect "Path lạ ở edge (nginx) → 404" 404 "$st"
+
+# Có token để qua được lớp auth, rồi gateway không có route khớp → 404 (không phải 401).
+st="$(req GET "$BASE_URL/api/khongcoservice/x" "" "$TOKEN")"
+expect "Route /api không tồn tại (có token) → 404" 404 "$st"
 
 # --- 5) Internal-only: KHÔNG lộ ra biên -------------------------------------
 section "Bảo mật: /internal không lộ ra ngoài"
