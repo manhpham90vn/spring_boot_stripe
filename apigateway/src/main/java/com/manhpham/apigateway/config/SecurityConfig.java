@@ -29,8 +29,10 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
  * lúc flash sale. Sau khi verify, request mới được route xuống service hạ nguồn.
  *
  * <p>Lưu ý: các service hạ nguồn (Catalog, Order...) cũng tự verify lại JWT bằng
- * {@code common-security}. Gateway verify để chặn sớm ở biên; service verify lại
- * để không tin tưởng mù quáng dù bị gọi thẳng trong cluster (defense in depth).
+ * {@code common-security}. Đây là "verify HAI LẦN" (không phải defense-in-depth cổ điển):
+ * service verify mới là lớp bảo vệ THẬT (zero-trust, chặn cả khi bị gọi thẳng trong
+ * cluster); gateway verify chỉ là tối ưu — fail-fast ở biên + cho phép rate-limit theo user.
+ * Xác thực danh tính service (không chỉ user) thì dùng mTLS/mesh (xem docs/deployment-k8s.md §5).
  */
 @Configuration
 @EnableWebFluxSecurity

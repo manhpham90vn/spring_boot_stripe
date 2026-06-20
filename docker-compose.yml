@@ -135,6 +135,10 @@ services:
       # (2) thêm một dòng "<svc>: { condition: service_healthy }" vào đây.
       auth:
         condition: service_healthy
+      order:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
     volumes:
       - ./infra/debezium:/config:ro
     entrypoint:
@@ -335,6 +339,9 @@ services:
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/order
+      JWK_SET_URI: http://auth:8081/internal/jwks
+      JWT_ISSUER: auth
+      SERVICES_CATALOG_URL: http://catalog:8082
       SERVICES_INVENTORY_URL: http://inventory:8083
       SERVICES_PAYMENT_URL: http://payment:8086
     volumes:

@@ -29,23 +29,23 @@
 | # | Vấn đề | Cách giải quyết | TT |
 |---|--------|-----------------|----|
 | 2.1 | Trừ tiền nhiều lần | **Idempotency-Key** + **chỉ 1 PaymentIntent sống/đơn** (2.16) | 🔧 |
-| 2.2 | Thiếu idempotency | Mọi lệnh tạo/sửa tiền kèm Stripe **Idempotency-Key** | ✅(hướng) |
+| 2.2 | Thiếu idempotency | **Đã làm**: Idempotency-Key (`order:{id}:attempt:1`) + UNIQUE `order_id` ở DB payment | ✅ |
 | 2.3 | Webhook trễ / sai thứ tự | Xử lý theo **trạng thái CUỐI** của PI, không theo thứ tự đến; dedup (2.8) | ✅ |
 | 2.4 | Tin client thay vì webhook | **Webhook = nguồn sự thật duy nhất** ([saga §2.1](./saga-purchase-flow.md)) | ✅ |
 | 2.5 | Session/PI hết hạn | Xử lý `checkout.session.expired` / `payment_intent.canceled` → đóng đơn + nhả hold | 🔧 |
 | 2.6 | SCA / 3DS | `requires_action` → chờ webhook, đơn ở AWAITING_PAYMENT ([payment §6](./payment-stripe-flow.md)) | ✅ |
-| 2.7 | Phương thức async | **AWAITING_PAYMENT**, fulfill chỉ khi `async_payment_succeeded` ([saga §2.1](./saga-purchase-flow.md), [payment §7](./payment-stripe-flow.md)) | ✅ |
-| 2.8 | Idempotent cả side-effect | Bảng **`processed_events`** (dedup `event.id`) + consumer Ticket/Notification idempotent | 🔧 |
-| 2.9 | Không đối chiếu amount/currency webhook | So **`amount`+`currency`** trong event với đơn trước khi cho qua (chống thao túng PI) | 🔧 |
+| 2.7 | Phương thức async | **Đã làm**: saga event-driven — đơn về `AWAITING_PAYMENT`, tiếp tục khi nhận `PaymentSettled` (Payment outbox→`payment.events`→Order). Webhook async cũng phát event này | ✅ |
+| 2.8 | Idempotent cả side-effect | **Đã làm**: bảng `processed_events` (dedup `event.id`) ở webhook + Ticket phát vé idempotent (`existsByOrderId`) | ✅ |
+| 2.9 | Không đối chiếu amount/currency webhook | **Đã làm**: webhook so `amount`+`currency` của PI với đơn, lệch thì KHÔNG áp dụng | ✅ |
 | 2.10 | Webhook song song cùng đơn | **Khóa theo đơn** (optimistic version / row-lock) khi cập nhật trạng thái | 🔧 |
 | 2.11 | Capture thủ công | **Không dùng** auth-and-capture — **charge ngay** (vé bán tức thì). Tuyên bố scope | ✅(quyết định) |
 | 2.12 | `payment_intent.canceled` | Handler riêng → đóng đơn + nhả hold ngay (không chờ timer) | 🔧 |
 | 2.13 | Amount dưới ngưỡng / = 0 | Vé **free (¥0)** → fulfill thẳng KHÔNG gọi Stripe; validate ngưỡng JPY (~¥50) | 🔧 |
 | 2.14 | Decline → retry → tiền mồ côi | Thẻ: cho retry trên **cùng PI** trong TTL; khi **bỏ cuộc phải CANCEL PI** rồi mới nhả hold ([saga §3](./saga-purchase-flow.md)) | 🔧 |
-| 2.15 | Liên kết đơn ↔ PI | Ghi `order_id` vào **PI `metadata`**; lưu `paymentIntentId` vào đơn **trước khi** đi thanh toán; webhook tra theo id (không suy từ email/amount) | 🔧 |
+| 2.15 | Liên kết đơn ↔ PI | **Một phần**: đã ghi `order_id` vào PI `metadata`; webhook tra đơn theo metadata. Còn thiếu: lưu `paymentIntentId` vào đơn TRƯỚC khi đi (hiện lưu sau charge) | ⚠️ |
 | 2.16 | Trùng session/PI một đơn | **Tối đa 1 PI sống/đơn**: reuse cái còn hạn, expire/cancel cái cũ khi đơn đổi | 🔧 |
-| 2.17 | Vòng đời Idempotency-Key | Key = `order:{id}:attempt:{n}` (ổn định, tăng attempt khi đơn đổi); xử lý `idempotency_error` tường minh | 🔧 |
-| 2.18 | Gọi Stripe chiều ra thất bại | **Rate limiter + retry exponential backoff** (chỉ 429/5xx/timeout) + Idempotency-Key; charge nghi mồ côi → reconciliation ([resilience §4](./resilience-flash-sale.md)) | ✅(hướng)/🔧 |
+| 2.17 | Vòng đời Idempotency-Key | **Một phần**: key ổn định `order:{id}:attempt:1`. Còn thiếu: tăng `attempt` khi đơn đổi + xử lý `idempotency_error` tường minh | ⚠️ |
+| 2.18 | Gọi Stripe chiều ra thất bại | **Đã làm**: Resilience4j `@RateLimiter`+`@Retry` (chỉ 429/5xx/timeout, bọc `StripeTransientException`) + Idempotency-Key + fallback. Charge mồ côi → reconciliation (3.4, còn 🔧) | ✅ |
 | 2.19 | Radar review | (tuỳ chọn, vé giá cao) chặn fulfill khi `review.opened`, mở khi `review.closed` | 🔧 |
 
 ## 3. Tính nhất quán
@@ -54,7 +54,7 @@
 |---|--------|-----------------|----|
 | 3.1 | Dual-write Stripe↔DB | **Webhook nguồn sự thật + idempotency + reconciliation**. ⚠️ Outbox CHỈ giải DB↔Kafka nội bộ, KHÔNG giải biên Stripe | 🔧 |
 | 3.2 | Thiếu state machine | **Order state machine** PENDING→AWAITING_PAYMENT→PAID→COMPLETED + REJECTED/CANCELLED ([saga §3](./saga-purchase-flow.md)) | ✅ |
-| 3.3 | Webhook mất vĩnh viễn | Trả **2xx nhanh** (đẩy Kafka rồi xử lý) + **reconciliation/polling** kéo lại trạng thái đơn nghi ngờ | ⚠️/🔧 |
+| 3.3 | Webhook/event mất | **Đã làm (phía saga)**: `OrderReconciliationJob` định kỳ hỏi lại Payment cho đơn kẹt `AWAITING_PAYMENT` → tự tiếp tục/bù trừ. Còn 🔧: Payment↔Stripe reconciliation (3.4) | ✅ |
 | 3.4 | **Thiếu reconciliation** | **Job đối soát Stripe↔DB định kỳ** (lưới an toàn cuối) + alert khi lệch — *phải thêm, hiện chưa có* | 🔧 |
 | 3.5 | Gross vs net | Đối soát kế toán/payout dùng **`balance_transaction`/net** (đã trừ phí), tách với đối soát trạng thái đơn (amount) | 🔧 |
 | 3.6 | Thiếu audit & alert | **Audit log** mọi transition tiền (kèm `event.id`, from→to) + **alert** khi reconciliation lệch / refund / dispute | 🔧 |
@@ -65,7 +65,7 @@
 | # | Vấn đề | Cách giải quyết | TT |
 |---|--------|-----------------|----|
 | 4.1 | Tin giá client | Giá **tính ở server** từ Catalog (`priceMinor`+`currency`), không tin amount client | ✅ |
-| 4.2 | Verify webhook + replay | Verify bằng **Stripe SDK** (chữ ký + **timestamp tolerance**); dedup `event.id` là lớp 2 ([payment §5](./payment-stripe-flow.md)) | ✅/🔧 |
+| 4.2 | Verify webhook + replay | **Đã làm**: `Webhook.constructEvent` (chữ ký + timestamp tolerance) + dedup `event.id` (processed_events) ở StripeWebhookService | ✅ |
 | 4.3 | Quản lý secret | Secret từ **env/K8s Secret**, không commit/log; **restricted key**; quy trình rotate ([deployment §6](./deployment-k8s.md)) | ✅ |
 | 4.4 | Phạm vi PCI / PAN | **Stripe.js / Payment Element** — PAN **không bao giờ chạm backend**, server chỉ thấy token/PI id | 🔧 |
 | 4.5 | IDOR xem đơn người khác | Mọi truy cập đơn kiểm **`order.user_id == user`** (object-level authz), không dựa id khó đoán | 🔧 |

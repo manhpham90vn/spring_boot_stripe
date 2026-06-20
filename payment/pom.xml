@@ -47,6 +47,7 @@
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-spring-boot4</artifactId>
 			<version>2.4.0</version>
+			<!-- Kéo theo hạ tầng AOP (aspect) để annotation @RateLimiter/@Retry được weave. -->
 		</dependency>
 		<dependency>
 			<groupId>com.stripe</groupId>
@@ -56,6 +57,11 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
