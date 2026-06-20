@@ -78,7 +78,7 @@ public class JwtKeys {
         return privateKey;
     }
 
-    /** RSA public key for verifying our own tokens (resource server decoder). */
+    /** Public key RSA để verify chính token của ta (nếu Auth tự làm resource-server). */
     public RSAPublicKey getPublicKey() {
         return publicJwk.toKey();
     }
@@ -87,7 +87,7 @@ public class JwtKeys {
         return keyId;
     }
 
-    /** JWKS document body: {@code {"keys": [ <public jwk> ]}}. */
+    /** Thân tài liệu JWKS: {@code {"keys": [ <public jwk> ]}} — JwksController trả ra đây. */
     public Map<String, Object> jwkSet() {
         return Map.of("keys", List.of(publicJwk));
     }
@@ -115,7 +115,7 @@ public class JwtKeys {
         }
     }
 
-    /** Strips PEM armor/whitespace and Base64-decodes the DER body. */
+    /** Bỏ phần "-----BEGIN/END-----" và khoảng trắng của PEM rồi Base64-decode lấy DER thô. */
     private static byte[] decodePem(String pem) {
         String base64 = pem.replaceAll("-----BEGIN [^-]+-----", "")
                 .replaceAll("-----END [^-]+-----", "")

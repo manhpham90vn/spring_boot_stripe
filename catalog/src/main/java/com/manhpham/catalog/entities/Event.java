@@ -27,12 +27,15 @@ public class Event {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
+    // Chỉ lưu ID của venue, KHÔNG dùng @ManyToOne. Đây là chủ ý: tránh JPA tự kéo theo
+    // (lazy/eager) gây N+1 query; service tự nạp Venue khi cần rồi ghép vào DTO.
     @Column(name = "venue_id", nullable = false)
     private UUID venueId;
 
     @Column(nullable = false, length = 300)
     private String title;
 
+    // columnDefinition = "text": mô tả dài không giới hạn → map sang kiểu TEXT của Postgres.
     @Column(columnDefinition = "text")
     private String description;
 
@@ -40,9 +43,12 @@ public class Event {
     @Column(nullable = false, length = 32)
     private EventStatus status;
 
+    // Thời điểm sự kiện diễn ra.
     @Column(name = "starts_at", nullable = false)
     private Instant startsAt;
 
+    // Khung thời gian MỞ BÁN (có thể null nếu chưa định). Inventory/Order sẽ dựa vào đây
+    // để quyết định có cho mua hay không.
     @Column(name = "sales_start_at")
     private Instant salesStartAt;
 
@@ -68,6 +74,7 @@ public class Event {
         e.startsAt = startsAt;
         e.salesStartAt = salesStartAt;
         e.salesEndAt = salesEndAt;
+        // Sự kiện mới luôn bắt đầu ở DRAFT (chưa công khai) — admin chủ động mở bán sau.
         e.status = EventStatus.DRAFT;
         return e;
     }

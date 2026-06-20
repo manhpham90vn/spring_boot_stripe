@@ -33,6 +33,21 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * Nghiệp vụ Catalog cho Event + TicketType. Đây là service "đọc nhiều, ghi ít" nên có
+ * hai điểm đáng học:
+ *
+ * <ul>
+ *   <li><b>Cache (Redis)</b>: các hàm ĐỌC gắn {@code @Cacheable} để lần sau lấy thẳng từ
+ *       cache; các hàm GHI gắn {@code @CacheEvict}/{@code @Caching} để xóa cache cũ, tránh
+ *       trả dữ liệu lỗi thời. Quy ước cache name: {@code "events"} (các danh sách),
+ *       {@code "event"} (chi tiết theo id), {@code "venues"} (danh sách venue).</li>
+ *   <li><b>{@code @Transactional}</b>: hàm chỉ đọc đặt {@code readOnly = true} để DB tối
+ *       ưu (không cần theo dõi thay đổi); hàm ghi để mặc định (đọc-ghi). Trong cùng một
+ *       transaction, sửa entity đã nạp sẽ tự được flush khi commit — KHÔNG cần gọi save()
+ *       lại (xem changeStatus/update bên dưới: "dirty checking" của JPA).</li>
+ * </ul>
+ */
 @Service
 @RequiredArgsConstructor
 public class EventServiceImpl implements EventService {
@@ -41,6 +56,8 @@ public class EventServiceImpl implements EventService {
     private final TicketTypeRepository ticketTypes;
     private final VenueRepository venues;
 
+    // @Cacheable("events"): kết quả được lưu vào cache "events"; lần gọi sau (cùng tham số)
+    // trả thẳng từ cache, không chạm DB. Đây là danh sách công khai → bỏ qua DRAFT.
     @Override
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "events")
@@ -67,6 +84,8 @@ public class EventServiceImpl implements EventService {
                 .toList();
     }
 
+    // key = "#eventId": mỗi sự kiện một mục cache riêng (cache "event" theo id), thay vì
+    // gom chung như danh sách. SpEL "#eventId" tham chiếu tham số cùng tên.
     @Override
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "event", key = "#eventId")
@@ -91,10 +110,14 @@ public class EventServiceImpl implements EventService {
         return TicketTypeResponse.from(loadTicketTypeOfEvent(eventId, ticketTypeId));
     }
 
+    // @CacheEvict(allEntries = true): tạo sự kiện mới làm MỌI danh sách "events" cũ sai →
+    // xóa sạch cache đó để lần đọc kế tiếp dựng lại từ DB. allEntries vì ta không biết mục
+    // danh sách nào chứa nó (danh sách được cache theo nhiều biến thể).
     @Override
     @Transactional
     @CacheEvict(cacheNames = "events", allEntries = true)
     public EventDetailResponse create(CreateEventRequest request) {
+        // Kiểm tra venue tồn tại TRƯỚC khi tạo event — tránh tạo event trỏ tới venue ma.
         if (!venues.existsById(request.venueId())) {
             throw new VenueNotFoundException(request.venueId());
         }
@@ -103,6 +126,8 @@ public class EventServiceImpl implements EventService {
         return buildDetail(saved);
     }
 
+    // @Caching gộp NHIỀU evict: vừa xóa danh sách ("events", allEntries) vừa xóa đúng mục
+    // chi tiết của sự kiện này ("event" theo key) — vì đổi trạng thái ảnh hưởng cả hai.
     @Override
     @Transactional
     @Caching(evict = {
@@ -111,6 +136,8 @@ public class EventServiceImpl implements EventService {
     })
     public EventDetailResponse changeStatus(UUID eventId, EventStatus status) {
         Event event = events.findById(eventId).orElseThrow(() -> new EventNotFoundException(eventId));
+        // Sửa entity trong transaction là đủ: JPA "dirty checking" sẽ tự UPDATE khi commit,
+        // không cần gọi events.save(event) — đây là điểm hay khiến nhiều người mới bối rối.
         event.changeStatus(status);
         return buildDetail(event);
     }

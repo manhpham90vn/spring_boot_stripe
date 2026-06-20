@@ -11,10 +11,15 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
 
 /**
- * Inbound side of the registration → notification flow. Bound to the
- * {@code user.events} topic via the {@code userRegisteredSink-in-0} binding
- * (see application.properties + spring.cloud.function.definition) and sends the
- * welcome email.
+ * Đầu NHẬN của luồng "đăng ký → gửi thông báo". Đây là một consumer Kafka viết theo kiểu
+ * Spring Cloud Stream functional: chỉ cần khai một {@link Consumer}, framework tự đấu nó
+ * vào topic.
+ *
+ * <p>Cơ chế binding: tên bean ({@code userRegisteredSink}) + hậu tố {@code -in-0} tạo thành
+ * binding {@code userRegisteredSink-in-0}; trong application.properties ta trỏ binding đó
+ * tới topic {@code user.events}, và khai {@code spring.cloud.function.definition} =
+ * {@code userRegisteredSink} để Spring biết hàm nào là consumer. Mỗi message tới, framework
+ * deserialize JSON thành {@link UserRegisteredEvent} rồi gọi {@link #accept}.
  */
 @Component
 @Slf4j
@@ -29,6 +34,7 @@ public class UserRegisteredSink implements Consumer<UserRegisteredEvent> {
         this.from = from;
     }
 
+    // Được gọi cho MỖI message đọc từ topic. event đã được framework deserialize sẵn từ JSON.
     @Override
     public void accept(UserRegisteredEvent event) {
         SimpleMailMessage message = new SimpleMailMessage();
@@ -41,8 +47,9 @@ public class UserRegisteredSink implements Consumer<UserRegisteredEvent> {
             mailSender.send(message);
             log.info("Sent welcome email for userId={}", event.userId());
         } catch (MailException e) {
-            // Swallow so a dev SMTP outage doesn't hot-loop redelivery; wire a Kafka
-            // DLQ + retry before relying on this in a real environment.
+            // "Nuốt" lỗi để khi SMTP dev hỏng không gây vòng lặp gửi lại liên tục (hot-loop):
+            // nếu ném exception, Spring Cloud Stream sẽ redeliver mãi. Ở môi trường thật cần
+            // gắn Kafka DLQ (dead-letter queue) + retry có kiểm soát trước khi dựa vào cách này.
             log.error("Failed to send welcome email for userId={}: {}", event.userId(), e.getMessage());
         }
     }

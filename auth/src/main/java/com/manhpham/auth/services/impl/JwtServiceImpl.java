@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 
-/** Issues signed RS256 access tokens. */
+/** Phát access token ký bằng RSA/RS256 (chữ ký bất đối xứng: ký bằng private, verify bằng public). */
 @Service
 @RequiredArgsConstructor
 public class JwtServiceImpl implements JwtService {

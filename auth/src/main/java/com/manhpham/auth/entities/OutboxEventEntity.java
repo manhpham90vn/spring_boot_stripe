@@ -10,13 +10,15 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * A row in the transactional outbox. Written in the SAME transaction as the
- * business change; nothing in the app publishes it — a Debezium connector reads
- * the table's INSERTs from the Postgres WAL and routes them to Kafka. Hence no
- * {@code published_at}/locking columns: the WAL is the source of truth for the
- * publisher, the table is just the transactional handoff (and is purged later).
+ * Một DÒNG trong bảng transactional outbox. Được ghi trong CÙNG transaction với thay đổi
+ * nghiệp vụ; KHÔNG có thành phần nào trong app tự đẩy nó đi — một connector Debezium đọc
+ * các bản ghi INSERT của bảng này từ WAL của Postgres rồi định tuyến lên Kafka.
  *
- * <p>Column names match the Debezium Outbox Event Router field mapping.
+ * <p>Vì thế bảng KHÔNG cần cột {@code published_at} hay cột khóa (locking): WAL mới là
+ * nguồn sự thật cho việc phát event, còn bảng chỉ là điểm "bàn giao trong transaction"
+ * (và sẽ được dọn bớt sau bởi OutboxPurgeJob).
+ *
+ * <p>Tên các cột được đặt khớp với field mapping của Debezium Outbox Event Router.
  */
 @Entity
 @Table(name = "outbox")

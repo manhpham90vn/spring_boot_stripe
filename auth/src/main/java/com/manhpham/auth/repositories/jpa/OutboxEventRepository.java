@@ -12,9 +12,13 @@ import java.util.UUID;
 public interface OutboxEventRepository extends JpaRepository<OutboxEventEntity, UUID> {
 
     /**
-     * Housekeeping only — NOT a publisher. Debezium reads INSERTs from the WAL, so
-     * once a row is committed it is safe to delete regardless of relay lag (the
-     * slot retains the WAL). Old rows are purged just to keep the table small.
+     * CHỈ để dọn rác — KHÔNG phải cơ chế phát event. Debezium đọc INSERT từ WAL, nên một
+     * khi dòng đã commit thì xóa nó là an toàn bất kể connector có đang chậm hay không
+     * (replication slot vẫn giữ WAL cho tới khi Debezium đọc xong). Xóa dòng cũ chỉ nhằm
+     * giữ cho bảng outbox khỏi phình to.
+     *
+     * <p>{@code @Modifying}: báo cho Spring Data đây là câu lệnh ghi (DELETE), không phải
+     * SELECT. Trả về số dòng đã xóa.
      */
     @Modifying
     @Query("delete from OutboxEventEntity o where o.createdAt < :cutoff")

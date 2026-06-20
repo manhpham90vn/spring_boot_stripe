@@ -8,7 +8,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** Chi tiết sự kiện: kèm địa điểm + các loại vé (dùng cho trang chi tiết, cache). */
+/**
+ * Chi tiết sự kiện: kèm địa điểm + các loại vé (dùng cho trang chi tiết, có cache).
+ *
+ * <p>{@code implements Serializable}: vì kết quả này được lưu vào Redis bằng JDK
+ * serialization (xem CacheConfig), nên DTO phải Serializable mới cache được. Khi nào đổi
+ * sang serialize JSON thì không còn bắt buộc điều này nữa.
+ */
 public record EventDetailResponse(
         UUID id,
         String title,

@@ -36,12 +36,17 @@ public class TicketType {
     @Column(length = 500)
     private String description;
 
+    // Giá theo ĐƠN VỊ NHỎ NHẤT (vd cent với USD): 10.00 USD lưu là 1000. Dùng số nguyên
+    // (long) thay vì double để tránh sai số dấu phẩy động khi tính tiền.
     @Column(name = "price_minor", nullable = false)
     private long priceMinor;
 
+    // Mã tiền tệ ISO-4217 (3 ký tự: "USD", "VND"...). Cần cặp đôi với priceMinor vì có
+    // tiền tệ không có phần thập phân (zero-decimal như JPY) — không phải lúc nào cũng ×100.
     @Column(nullable = false, length = 3)
     private String currency;
 
+    // Giới hạn số vé mỗi đơn — chống một người gom hết vé khi flash sale.
     @Column(name = "max_per_order", nullable = false)
     private int maxPerOrder;
 

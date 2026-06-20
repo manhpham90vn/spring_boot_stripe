@@ -9,10 +9,10 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * The single bridge between the typed domain event and its durable form. Business
- * services call {@link #fire(OutboxEvent)} from inside their own transaction; they
- * stay unaware of JSON serialization, the table or the transport. Swapping the
- * publisher (poller ↔ Debezium) never touches a caller of this class.
+ * Cây cầu DUY NHẤT giữa domain event (có kiểu) và dạng lưu bền của nó. Service nghiệp vụ
+ * gọi {@link #fire(OutboxEvent)} TỪ BÊN TRONG transaction của mình; chúng không cần biết
+ * gì về serialize JSON, tên bảng hay cơ chế vận chuyển. Nhờ vậy, sau này muốn đổi cách
+ * phát event (vd từ poller sang Debezium) cũng không phải sửa bất kỳ caller nào.
  */
 @Component
 @RequiredArgsConstructor
@@ -22,8 +22,8 @@ public class OutboxEventSender {
     private final ObjectMapper objectMapper;
 
     /**
-     * Persists the event into the outbox. Must run within the caller's business
-     * transaction so the event and the business change commit atomically.
+     * Ghi event xuống bảng outbox. PHẢI chạy trong transaction nghiệp vụ của caller để
+     * event và thay đổi nghiệp vụ commit nguyên tử (atomic) — cùng thành công hoặc cùng hủy.
      */
     public void fire(OutboxEvent<?> event) {
         // CHỈ ghi event xuống bảng outbox (cùng transaction với thay đổi nghiệp vụ) —
@@ -36,10 +36,13 @@ public class OutboxEventSender {
                 toJson(event.getPayload())));
     }
 
+    /** Serialize payload nghiệp vụ thành chuỗi JSON để lưu vào cột payload của bảng outbox. */
     private String toJson(Object payload) {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JacksonException e) {
+            // Lỗi serialize là lỗi lập trình (payload không hợp lệ) → ném runtime để
+            // transaction rollback, không "nuốt" lỗi rồi ghi event rỗng.
             throw new IllegalStateException("Failed to serialize outbox payload " + payload.getClass(), e);
         }
     }

@@ -11,10 +11,10 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Trims already-captured outbox rows so the table stays small. This is pure
- * housekeeping — it does NOT publish anything (Debezium does, off the WAL). Safe
- * to run independently of the connector's progress: a committed row is already in
- * the WAL, which the replication slot retains until Debezium has consumed it.
+ * Cắt bớt các dòng outbox đã được Debezium thu thập để bảng luôn nhỏ gọn. Đây THUẦN TÚY
+ * là việc dọn rác — KHÔNG phát đi cái gì (Debezium làm việc đó, đọc từ WAL). An toàn để
+ * chạy độc lập với tiến độ của connector: dòng đã commit thì đã nằm trong WAL, mà
+ * replication slot giữ WAL lại cho tới khi Debezium tiêu thụ xong → không sợ mất event.
  */
 @Component
 @Slf4j
@@ -23,6 +23,8 @@ public class OutboxPurgeJob {
     private final OutboxEventRepository repository;
     private final Duration retention;
 
+    // retention đọc từ property, mặc định "P3D" = 3 ngày (định dạng ISO-8601 Duration).
+    // Spring tự parse chuỗi đó thành Duration.
     public OutboxPurgeJob(OutboxEventRepository repository,
                           @Value("${auth.outbox.retention:P3D}") Duration retention) {
         this.repository = repository;

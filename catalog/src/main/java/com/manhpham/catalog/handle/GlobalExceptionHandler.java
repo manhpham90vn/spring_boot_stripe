@@ -15,9 +15,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * Bộ xử lý exception tập trung cho Catalog (xem giải thích {@code @RestControllerAdvice}
+ * ở GlobalExceptionHandler của Auth). Ánh xạ exception nghiệp vụ → mã HTTP đúng ngữ nghĩa,
+ * trả về cùng khuôn {@link ApiError} cho nhất quán.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    // Gom 3 loại "không tìm thấy" vào MỘT handler vì cùng trả 404 — đỡ lặp code. Tham số
+    // khai kiểu cha RuntimeException để nhận được cả ba.
     @ExceptionHandler({VenueNotFoundException.class, EventNotFoundException.class,
             TicketTypeNotFoundException.class})
     public ResponseEntity<ApiError> handleNotFound(RuntimeException ex) {

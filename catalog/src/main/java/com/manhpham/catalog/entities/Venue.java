@@ -11,6 +11,11 @@ import lombok.Getter;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Địa điểm tổ chức sự kiện (nhà hát, sân vận động...). Một Venue có thể gắn nhiều Event.
+ * Cùng khuôn entity với phần còn lại của Catalog: tạo qua factory {@link #create}, chỉ
+ * mở getter, id và mốc thời gian do callback JPA tự gán.
+ */
 @Entity
 @Table(name = "venues")
 @Getter

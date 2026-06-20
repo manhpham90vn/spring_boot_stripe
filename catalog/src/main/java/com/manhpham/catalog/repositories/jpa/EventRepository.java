@@ -7,6 +7,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Repository cho Event. Kế thừa {@link JpaRepository} là có sẵn CRUD (save/findById/
+ * findAll/delete...). Các phương thức dưới đây là "derived query": Spring Data tự SINH
+ * câu SQL DỰA TRÊN TÊN HÀM — không cần viết SQL. Vd {@code findByStatusNotOrderByStartsAtAsc}
+ * được hiểu là "WHERE status <> ? ORDER BY starts_at ASC". Đặt tên đúng quy ước là đủ.
+ */
 public interface EventRepository extends JpaRepository<Event, UUID> {
 
     /** Danh sách công khai: bỏ các sự kiện chưa phát hành (DRAFT). */
