@@ -31,6 +31,9 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-60}"
 TEST_PASSWORD="${TEST_PASSWORD:-Test1234!}"
 
+# UUID toàn 0: dùng cho các assertion "không tồn tại" (event/venue/order vu vơ).
+MISSING_UUID="00000000-0000-0000-0000-000000000000"
+
 # --- Khung in màu (tự tắt nếu không phải terminal) --------------------------
 if [ -t 1 ]; then
   GREEN=$'\033[32m'; RED=$'\033[31m'; YEL=$'\033[33m'; DIM=$'\033[2m'; NC=$'\033[0m'
@@ -173,15 +176,48 @@ expect "GET /me KHÔNG token bị chặn" 401 "$st"
 st="$(req GET "$BASE_URL/api/auth/me" "" "rac.khong.hop.le")"
 expect "GET /me token rác bị chặn" 401 "$st"
 
+st="$(req GET "$BASE_URL/api/ticket")"
+expect "GET /api/ticket KHÔNG token bị chặn" 401 "$st"
+
+st="$(req POST "$BASE_URL/api/order" '{"eventId":"'"$MISSING_UUID"'","ticketTypeId":"'"$MISSING_UUID"'","quantity":1}')"
+expect "POST /api/order KHÔNG token bị chặn" 401 "$st"
+
 # --- 3b) Catalog: not-found ánh xạ đúng 404 ---------------------------------
 section "Catalog: not-found"
-MISSING_UUID="00000000-0000-0000-0000-000000000000"
 
 st="$(req GET "$BASE_URL/api/catalog/public/events/$MISSING_UUID")"
 expect "GET event không tồn tại → 404" 404 "$st"
 
 st="$(req GET "$BASE_URL/api/catalog/public/venues/$MISSING_UUID")"
 expect "GET venue không tồn tại → 404" 404 "$st"
+
+# --- 3c) Order & Ticket: cần JWT, validate, IDOR ----------------------------
+# Dùng TOKEN của user vừa đăng ký (user thường, chưa mua gì). Không chạy saga mua
+# thật (cần seed tồn kho qua /internal + Stripe) — chỉ kiểm biên, validate, IDOR.
+section "Order & Ticket: JWT + validate + IDOR"
+
+st="$(req GET "$BASE_URL/api/ticket" "" "$TOKEN")"
+if [ "$st" = "200" ] && body_has '\['; then
+  pass "GET /api/ticket (user mới) → 200 + danh sách rỗng ${DIM}(200)${NC}"
+else
+  fail "GET /api/ticket với token — mong đợi 200 + mảng JSON, nhận $st"
+fi
+
+# Vé của người khác / không tồn tại → 404 (IDOR: không lộ tồn tại, không 403).
+st="$(req GET "$BASE_URL/api/ticket/$MISSING_UUID/qr.png" "" "$TOKEN")"
+expect "GET QR vé không thuộc mình → 404" 404 "$st"
+
+# Body sai (thiếu eventId/ticketTypeId, quantity<1) → 400, KHÔNG kích hoạt saga.
+st="$(req_retry POST "$BASE_URL/api/order" '{"quantity":0}' "$TOKEN")"
+expect "POST /api/order body thiếu trường → 400" 400 "$st"
+
+st="$(req_retry POST "$BASE_URL/api/order" \
+  '{"eventId":"'"$MISSING_UUID"'","ticketTypeId":"'"$MISSING_UUID"'","quantity":0}' "$TOKEN")"
+expect "POST /api/order quantity<1 → 400" 400 "$st"
+
+# Xem đơn không tồn tại / của người khác → 404 (IDOR).
+st="$(req GET "$BASE_URL/api/order/$MISSING_UUID" "" "$TOKEN")"
+expect "GET /api/order id không tồn tại → 404" 404 "$st"
 
 # --- 4) Phân quyền ADMIN ----------------------------------------------------
 section "Bảo mật: khu admin"
@@ -276,12 +312,24 @@ expect "Route /api không tồn tại (có token) → 404" 404 "$st"
 # --- 5) Internal-only: KHÔNG lộ ra biên -------------------------------------
 section "Bảo mật: /internal không lộ ra ngoài"
 
-st="$(req GET "$BASE_URL/internal/jwks")"
-if [ "$st" = "404" ] || [ "$st" = "403" ]; then
-  pass "/internal/jwks KHÔNG với tới từ edge ${DIM}($st)${NC}"
-else
-  fail "/internal/jwks KHÔNG được lộ ở edge — nhận $st (cần 404/403)"
-fi
+# Mọi route /internal/** đều CỐ Ý không có trong bảng định tuyến gateway (service gọi
+# nhau thẳng qua DNS, rào bằng NetworkPolicy). Gọi từ edge phải KHÔNG với tới (404/403).
+# DESC | PATH cho từng endpoint nội bộ nhạy cảm của các service.
+internal_blocked() {
+  local desc="$1" path="$2" tok="${3:-}"
+  local st; st="$(req GET "$BASE_URL$path" "" "$tok")"
+  if [ "$st" = "404" ] || [ "$st" = "403" ]; then
+    pass "$desc KHÔNG với tới từ edge ${DIM}($st)${NC}"
+  else
+    fail "$desc lộ ở edge — nhận $st (cần 404/403)"
+  fi
+}
+
+# JWKS của Auth (verify chữ ký JWT) — gọi không token và có token đều phải bị chặn ở biên.
+internal_blocked "/internal/jwks (auth)" "/internal/jwks"
+internal_blocked "/internal/stock (inventory)" "/internal/stock/$MISSING_UUID" "$TOKEN"
+internal_blocked "/internal/payments (payment)" "/internal/payments/by-order/$MISSING_UUID" "$TOKEN"
+internal_blocked "/internal/tickets (ticket)" "/internal/tickets/validate" "$TOKEN"
 
 if [ -n "$AUTH_DIRECT_URL" ]; then
   st="$(req GET "$AUTH_DIRECT_URL/internal/jwks")"

@@ -227,6 +227,7 @@ services:
       ROUTE_INVENTORY_URI: http://inventory:8083
       ROUTE_ORDER_URI: http://order:8084
       ROUTE_PAYMENT_URI: http://payment:8086
+      ROUTE_TICKET_URI: http://ticket:8087
       ROUTE_WAITINGROOM_URI: http://waitingroom:8089
     volumes:
       - ./apigateway:/workspace
