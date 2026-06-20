@@ -207,7 +207,7 @@ services:
         condition: service_healthy
     environment:
       <<: *spring-env
-      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://auth:8081/oauth2/jwks
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://auth:8081/internal/jwks
       ROUTE_AUTH_URI: http://auth:8081
       ROUTE_CATALOG_URI: http://catalog:8082
       ROUTE_INVENTORY_URI: http://inventory:8083
@@ -282,7 +282,7 @@ services:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalog
       # Resource server verify JWT cục bộ bằng JWKS của Auth (không gọi Auth mỗi request).
-      JWK_SET_URI: http://auth:8081/oauth2/jwks
+      JWK_SET_URI: http://auth:8081/internal/jwks
       JWT_ISSUER: auth
     volumes:
       - ./catalog:/workspace

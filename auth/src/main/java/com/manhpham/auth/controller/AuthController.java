@@ -21,9 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * Các endpoint công khai của Auth, đặt dưới tiền tố {@code /api/auth/**}. Gateway
- * route thẳng nhóm path này xuống đây mà KHÔNG bắt buộc JWT (xem permitAll trong
- * SecurityConfig của gateway) — hợp lý vì chưa đăng nhập thì lấy đâu ra token.
+ * Endpoint của Auth, đặt dưới tiền tố {@code /api/auth}. Theo quy ước path (xem
+ * docs/API-CONVENTIONS.md), DẤU HIỆU public/cần-token nằm NGAY TRÊN path:
+ * <ul>
+ *   <li>{@code /api/auth/public/**} — CÔNG KHAI (register, login): chưa đăng nhập thì
+ *       lấy đâu ra token, nên mở.</li>
+ *   <li>{@code /api/auth/me} — CẦN JWT: không nằm dưới {@code /public/} nên mặc định bắt
+ *       buộc token.</li>
+ * </ul>
  *
  * <p>Controller chỉ làm nhiệm vụ "vào/ra HTTP": nhận request, validate, ủy thác cho
  * {@link AuthService}, rồi map entity thành DTO trả về. KHÔNG để logic nghiệp vụ ở đây.
@@ -36,20 +41,20 @@ public class AuthController {
     private final AuthService authService;
 
     /**
-     * Đăng ký tài khoản mới. {@code @Valid} kích hoạt bộ kiểm tra ràng buộc trên
-     * {@link RegisterRequest} (email hợp lệ, mật khẩu đủ dài...) TRƯỚC khi vào service;
-     * lỗi validate sẽ do GlobalExceptionHandler bắt và trả 400. Thành công trả 201 CREATED.
-     * Trả về {@link UserResponse} (KHÔNG kèm password hash) để không lộ dữ liệu nhạy cảm.
+     * Đăng ký tài khoản mới — CÔNG KHAI ({@code /public/}). {@code @Valid} kích hoạt bộ
+     * kiểm tra ràng buộc trên {@link RegisterRequest} (email hợp lệ, mật khẩu đủ dài...)
+     * TRƯỚC khi vào service; lỗi validate do GlobalExceptionHandler bắt và trả 400. Thành
+     * công trả 201 CREATED. Trả {@link UserResponse} (KHÔNG kèm password hash).
      */
-    @PostMapping("/register")
+    @PostMapping("/public/register")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse register(@Valid @RequestBody RegisterRequest request) {
         User user = authService.register(request);
         return UserResponse.from(user);
     }
 
-    /** Đăng nhập: trả JWT (access token) đã ký nếu đúng email + mật khẩu. */
-    @PostMapping("/login")
+    /** Đăng nhập — CÔNG KHAI ({@code /public/}): trả JWT đã ký nếu đúng email + mật khẩu. */
+    @PostMapping("/public/login")
     public TokenResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
     }

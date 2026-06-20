@@ -221,7 +221,7 @@ xác nhận SOLD + phát event sinh vé; lỗi thì chạy **bù trừ** (compen
 ## 8. Bảo mật
 
 - **JWT verify chỉ ở gateway:** auth phát token RS256, publish public key tại
-  `/oauth2/jwks`; gateway là OAuth2 resource server, fetch JWKS, verify **chữ ký +
+  `/internal/jwks` (endpoint nội bộ); gateway là OAuth2 resource server, fetch JWKS, verify **chữ ký +
   hạn + issuer cục bộ**, **không gọi auth mỗi request**.
 - Claim chuẩn: `sub` (userId), `email`, `roles` (→ `ROLE_*` ở gateway). `iss` phải khớp
   `auth.jwt.issuer`.

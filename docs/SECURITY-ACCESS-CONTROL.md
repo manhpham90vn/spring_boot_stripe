@@ -31,8 +31,8 @@ cơ chế, khai báo tách bạch.
 - **Auth** ký access token bằng **private key RS256**, gắn `kid`, `iss=auth`, `sub=userId`,
   `roles=[...]`, `exp`.
 - **Gateway** và **mọi service** verify **cục bộ** bằng **public key** tải từ JWKS của Auth
-  (`/oauth2/jwks`), **cache lại** — KHÔNG gọi Auth mỗi request (tránh chẹn event-loop lúc
-  flash sale).
+  (`/internal/jwks` — endpoint nội bộ, xem §4), **cache lại** — KHÔNG gọi Auth mỗi request
+  (tránh chẹn event-loop lúc flash sale).
 - Danh tính đến từ token đã xác thực bằng mật mã → **không tin** bất kỳ header nào do
   client/gateway gắn vào. Vì thế dù bị gọi thẳng trong cluster, service vẫn an toàn.
 
@@ -77,36 +77,32 @@ client ───► │  Edge-policy: PUBLIC vs CẦN-TOKEN  (KHÔNG xét role �
 
 ```properties
 # Ví dụ thật của Catalog (catalog/src/main/resources/application.properties)
-# Xét theo thứ tự; KHỚP TRƯỚC THẮNG.
-app.security.rules[0].pattern=/api/catalog/admin/**   # [0] khu admin: cần role ADMIN
-app.security.rules[0].role=ADMIN                       #     (đặt role là ngầm hiểu HAS_ROLE)
-app.security.rules[1].method=GET                       # [1] duyệt danh mục: chỉ GET
-app.security.rules[1].pattern=/api/catalog/**          #     và công khai
+# Mức truy cập lộ rõ trên path (xem API-CONVENTIONS.md): public/admin là nhánh riêng.
+app.security.rules[0].pattern=/api/catalog/admin/**    # khu admin: cần role ADMIN
+app.security.rules[0].role=ADMIN                        # (đặt role là ngầm hiểu HAS_ROLE)
+app.security.rules[1].pattern=/api/catalog/public/**   # nhánh công khai: không cần token
 app.security.rules[1].access=PERMIT_ALL
 # Không khớp luật nào → mặc định authenticated.
 ```
 
 Mỗi luật (`ResourceServerProperties.Rule`):
 - `pattern` (bắt buộc) — Ant pattern.
-- `method` (tùy chọn) — GET/POST/...; bỏ trống = mọi method.
+- `method` (tùy chọn) — GET/POST/...; bỏ trống = mọi method. (Theo quy ước path mới thường
+  KHÔNG cần `method` nữa vì public/admin đã tách nhánh.)
 - `access` — `PERMIT_ALL` | `AUTHENTICATED` | `HAS_ROLE`.
 - `role` — đặt role là **ngầm hiểu** `HAS_ROLE` (bất kể `access`).
 
-**Gateway** — khai trong `apigateway/src/main/resources/application.properties`:
+**Gateway** — khai trong `apigateway/src/main/resources/application.properties`. Nhờ quy
+ước path, chỉ cần MỘT luật mở mọi nhánh public:
 
 ```properties
-app.gateway.access.rules[0].pattern=/api/auth/**            # đăng ký/đăng nhập: công khai
-app.gateway.access.rules[0].access=PERMIT_ALL
-app.gateway.access.rules[1].pattern=/api/catalog/admin/**   # admin: cần token ở biên
-app.gateway.access.rules[1].access=AUTHENTICATED            # (service mới kiểm ADMIN)
-app.gateway.access.rules[2].method=GET                      # duyệt catalog: GET công khai
-app.gateway.access.rules[2].pattern=/api/catalog/**
-app.gateway.access.rules[2].access=PERMIT_ALL
-# Còn lại (inventory/order/payment/...) → anyExchange = cần token.
+app.gateway.access.rules[0].pattern=/api/*/public/**       # mọi nhánh public của mọi service
+app.gateway.access.rules[0].access=PERMIT_ALL              # (auth/public, catalog/public, ...)
+# Còn lại → anyExchange = cần token: /api/auth/me, /api/catalog/admin/**, /api/order/**...
 ```
 
-> **Thứ tự quan trọng.** Luật admin đặt **trước** luật GET công khai, nếu không thì
-> `GET /api/catalog/admin/events` sẽ lọt vào luật GET công khai và thành public.
+> **Hết bẫy thứ tự.** Vì `public`/`admin`/mặc-định rời nhau theo path, không còn phải lo
+> "đặt admin trước GET" như cách cũ. Admin tự rơi vào `authenticated` ở biên (service kiểm role).
 
 ### 3.4 Cơ chế dựng filter (cùng một khuôn ở cả hai)
 
@@ -151,12 +147,18 @@ Ba lớp, không cần token nội bộ:
    chặn mọi nguồn khác (rào ở tầng mạng, độc lập với app).
 
 Trong app, `common-security` để `/internal/**` là **permitAll** — vì nếu bắt token sẽ
-chặn nhầm chính lời gọi nội bộ hợp lệ. Bảo vệ đến từ *mạng*, không phải từ JWT.
+chặn nhầm chính lời gọi nội bộ hợp lệ. Bảo vệ đến từ *mạng*, không phải từ JWT. (Auth dùng
+SecurityConfig riêng nên tự khai `/internal/**` permitAll để giữ chuẩn đồng nhất.)
+
+> **Ví dụ thật đang chạy: `/internal/jwks`.** Endpoint công bố public key của Auth đặt ở
+> `/internal/jwks` (không phải `/oauth2/jwks`) vì chỉ gateway/service gọi để verify JWT.
+> Đây là minh hoạ rõ nhất của quy ước: ta tự kiểm soát path + chỉ service↔service dùng → `/internal/`.
 
 ```
 Internet ──► Gateway ──(không có route /internal)──►  ✗  (không tới được)
 
 Order ───────(trong cluster, NetworkPolicy cho phép)──►  Inventory /internal/holds  ✓
+Gateway ─────(trong cluster)──────────────────────────►  Auth /internal/jwks        ✓
 Pod lạ ──────(NetworkPolicy chặn)────────────────────►  ✗
 ```
 
@@ -177,11 +179,12 @@ Pod lạ ──────(NetworkPolicy chặn)──────────�
 
 | Request | Biên (gateway) | Service (common-security) | Kết quả |
 |---------|----------------|---------------------------|---------|
-| `POST /api/auth/login` | PERMIT_ALL | (Auth tự cấu hình) | ✅ ai cũng gọi được |
-| `GET /api/catalog/events` (khách) | PERMIT_ALL (GET) | PERMIT_ALL (GET) | ✅ duyệt không cần đăng nhập |
+| `POST /api/auth/public/login` | PERMIT_ALL (`/public/`) | (Auth tự cấu hình) | ✅ ai cũng gọi được |
+| `GET /api/catalog/public/events` (khách) | PERMIT_ALL (`/public/`) | PERMIT_ALL (`/public/`) | ✅ duyệt không cần đăng nhập |
+| `GET /api/auth/me` (có token) | cần token ✅ | (Auth verify) | ✅ trả thông tin user |
 | `POST /api/catalog/admin/venues` (user thường) | cần token ✅ | `hasRole(ADMIN)` ✗ | ⛔ 403 tại service |
 | `POST /api/catalog/admin/venues` (admin) | cần token ✅ | `hasRole(ADMIN)` ✅ | ✅ |
-| `GET /api/orders/123` (khách) | anyExchange → cần token ✗ | — | ⛔ 401 tại biên |
+| `GET /api/order/123` (khách) | anyExchange → cần token ✗ | — | ⛔ 401 tại biên |
 | `POST /internal/holds` từ Internet | không có route ✗ | — | ⛔ không tới được |
 | `POST /internal/holds` từ Order (trong cluster) | (bỏ qua biên) | permitAll, NetworkPolicy ✅ | ✅ |
 | Webhook Stripe `/webhooks/stripe` | **bỏ qua gateway** (Ingress riêng, DMZ) | verify chữ ký Stripe (không JWT) | ✅ |

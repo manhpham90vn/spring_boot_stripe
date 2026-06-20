@@ -5,7 +5,7 @@
 > [`/CLAUDE.md`](../CLAUDE.md); kiến trúc tổng quan ở [`architecture.md`](./architecture.md).
 >
 > **TL;DR triển khai hiện tại:** Auth ký token bằng **RS256 (bất đối xứng)**, công
-> bố public key qua **JWKS** (`/oauth2/jwks`). Gateway và mọi service **verify cục
+> bố public key qua **JWKS** (`/internal/jwks`). Gateway và mọi service **verify cục
 > bộ** bằng public key, **không gọi Auth mỗi request** → hệ thống **stateless**.
 
 ---
@@ -168,7 +168,7 @@ String token = Jwts.builder()
 **Công bố public key qua JWKS** (`auth/.../controller/JwksController.java`):
 
 ```java
-@GetMapping("/oauth2/jwks")
+@GetMapping("/internal/jwks")
 public Map<String, Object> jwks() {
     return jwtKeys.jwkSet();   // {"keys": [ <public jwk có kid> ]}
 }
@@ -189,7 +189,7 @@ lần nữa — **không tin header do bên ngoài gắn vào**, danh tính luô
 đã xác thực mật mã (xem javadoc `ResourceServerAutoConfiguration`).
 
 ```
-                 ┌─────────── login (POST /api/auth/login) ──────────┐
+                 ┌─────── login (POST /api/auth/public/login) ───────┐
                  ▼                                                    │
  ┌────────┐   Bearer JWT    ┌───────────────┐   Bearer JWT   ┌──────────────────┐
  │ Client │ ───────────────▶│  apigateway   │ ──────────────▶│ catalog / order  │
@@ -200,7 +200,7 @@ lần nữa — **không tin header do bên ngoài gắn vào**, danh tính luô
                                     └──────────────┬─────────────────┘
                                                    ▼
                                        ┌────────────────────────┐
-                                       │  auth  GET /oauth2/jwks │  ← chỉ PUBLIC key
+                                       │  auth  GET /internal/jwks │  ← chỉ PUBLIC key
                                        └────────────────────────┘
 ```
 
@@ -235,7 +235,7 @@ Với một request mang `Authorization: Bearer <token>`:
 
 ```properties
 # apigateway/src/main/resources/application.properties
-spring.security.oauth2.resourceserver.jwt.jwk-set-uri=${JWK_SET_URI:http://localhost:8081/oauth2/jwks}
+spring.security.oauth2.resourceserver.jwt.jwk-set-uri=${JWK_SET_URI:http://localhost:8081/internal/jwks}
 security.jwt.issuer=${JWT_ISSUER:auth}
 ```
 
@@ -250,7 +250,7 @@ module dùng chung `common-security` (`ResourceServerAutoConfiguration`, *servle
 `NimbusJwtDecoder.withJwkSetUri`). Mỗi service chỉ cần:
 
 ```properties
-spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://auth:8081/oauth2/jwks
+spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://auth:8081/internal/jwks
 app.security.issuer=auth
 # tùy chọn path public riêng của service:
 # app.security.public-paths=/api/catalog/public/**

@@ -35,12 +35,16 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                // Chưa có token mới cần 2 endpoint này → phải mở.
-                                "/api/auth/register",
-                                "/api/auth/login",
-                                // JWKS: nơi gateway/service khác tải public key để verify → phải public.
-                                "/oauth2/jwks",
-                                // Tài liệu API + actuator hạ tầng.
+                                // Nhánh công khai theo quy ước path: register, login (chưa
+                                // đăng nhập thì lấy đâu ra token). /api/auth/me KHÔNG nằm ở
+                                // đây nên rơi vào anyRequest = cần JWT.
+                                "/api/auth/public/**",
+                                // API nội bộ service↔service (quy ước /internal/**): permitAll
+                                // ở app, rào thật ở tầng mạng (gateway không route + NetworkPolicy).
+                                // Auth tự khai vì KHÔNG dùng common-security; giữ chuẩn đồng nhất.
+                                // GỒM LUÔN JWKS (/internal/jwks) — chỉ service↔service tải public key.
+                                "/internal/**",
+                                // Tài liệu API + actuator hạ tầng (nhóm "platform", path do framework cố định).
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",

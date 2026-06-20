@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
  * Khai báo security scheme Bearer JWT cho Swagger UI → hiện nút "Authorize" để
  * dán access token. {@code @SecurityRequirement} ở mức global khiến mọi endpoint
  * (vd {@code /api/auth/me}) tự đính header {@code Authorization: Bearer <token>}
- * khi gọi thử. Token lấy từ {@code POST /api/auth/login}.
+ * khi gọi thử. Token lấy từ {@code POST /api/auth/public/login}.
  */
 @Configuration
 @OpenAPIDefinition(

@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Khai báo security scheme Bearer JWT cho Swagger UI → nút "Authorize" để dán
- * access token (lấy từ {@code POST /api/auth/login} của Auth). KHÔNG đặt
+ * access token (lấy từ {@code POST /api/auth/public/login} của Auth). KHÔNG đặt
  * {@code security} ở mức global vì phần lớn endpoint Catalog là đọc công khai;
  * chỉ endpoint admin mới cần token.
  */

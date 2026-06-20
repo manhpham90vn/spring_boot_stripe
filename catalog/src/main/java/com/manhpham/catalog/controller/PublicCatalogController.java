@@ -16,12 +16,12 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Duyệt danh mục — công khai (không cần JWT). Phục vụ dưới {@code /api/catalog/**}
- * (GET), gateway route thẳng vào đây. Đọc nhiều ghi ít → kết quả được cache Redis
- * ở tầng service.
+ * Duyệt danh mục — CÔNG KHAI (không cần JWT). Theo quy ước path (docs/API-CONVENTIONS.md),
+ * mọi route công khai nằm dưới nhánh {@code /api/catalog/public/**} → nhìn path là biết
+ * không cần token, không phải đoán theo HTTP method. Đọc nhiều ghi ít → cache Redis ở tầng service.
  */
 @RestController
-@RequestMapping("/api/catalog")
+@RequestMapping("/api/catalog/public")
 @RequiredArgsConstructor
 public class PublicCatalogController {
 
