@@ -36,8 +36,17 @@ cơ chế, khai báo tách bạch.
 - Danh tính đến từ token đã xác thực bằng mật mã → **không tin** bất kỳ header nào do
   client/gateway gắn vào. Vì thế dù bị gọi thẳng trong cluster, service vẫn an toàn.
 
-> Đây là lý do verify được lặp ở **2 lớp** (gateway + service) — *defense in depth*. Chi
-> tiết đầy đủ: [`jwt-authentication.md`](./jwt-authentication.md).
+> **Chính xác về "hai tầng verify":** đây là *verify HAI LẦN cùng một phép kiểm*, KHÔNG
+> phải "defense in depth" cổ điển (vốn là nhiều lớp KHÁC nhau). Phân vai đúng:
+> - **Service verify = lớp bảo vệ THẬT** (zero-trust): tự kiểm nên chặn được cả lời gọi
+>   thẳng trong cluster — không tin header do client/gateway gắn.
+> - **Gateway verify = tối ưu**: *fail-fast* (chặn token rác sớm ở biên) + cho phép
+>   *rate-limit theo danh tính user*. Nó KHÔNG thêm bảo đảm an ninh nào mà service chưa có.
+>
+> Lưu ý: hai tầng JWT chỉ phủ traffic `/api`. Mặt phẳng `/internal` (permitAll ở service)
+> được bảo vệ bằng **NetworkPolicy**, và nếu cần xác thực *danh tính service* thì dùng
+> **mTLS/mesh** — xem [`deployment-k8s.md §5`](./deployment-k8s.md). Chi tiết verify:
+> [`jwt-authentication.md`](./jwt-authentication.md).
 
 ---
 

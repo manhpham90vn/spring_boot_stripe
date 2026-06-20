@@ -188,6 +188,12 @@ Mọi traffic nghiệp vụ đi qua gateway; trong cluster mỗi service lại t
 lần nữa — **không tin header do bên ngoài gắn vào**, danh tính luôn đến từ token
 đã xác thực mật mã (xem javadoc `ResourceServerAutoConfiguration`).
 
+> **Đây là "verify hai lần", không phải defense-in-depth cổ điển.** Cả hai làm y hệt một
+> phép kiểm (cùng JWKS/issuer). **Service verify mới là lớp bảo vệ THẬT** (zero-trust, chặn
+> cả lời gọi thẳng trong cluster); **gateway verify chỉ là tối ưu** (fail-fast ở biên +
+> cho phép rate-limit theo user). Muốn xác thực *danh tính service* (không chỉ user) thì
+> dùng mTLS/mesh — xem [`deployment-k8s.md §5`](./deployment-k8s.md), [`SECURITY-ACCESS-CONTROL.md`](./SECURITY-ACCESS-CONTROL.md).
+
 ```
                  ┌─────── login (POST /api/auth/public/login) ───────┐
                  ▼                                                    │
