@@ -1,10 +1,13 @@
 package com.manhpham.apigateway.config;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.config.web.server.ServerHttpSecurity.AuthorizeExchangeSpec;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -31,7 +34,13 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
  */
 @Configuration
 @EnableWebFluxSecurity
+@EnableConfigurationProperties(GatewayAccessProperties.class)
 public class SecurityConfig {
+
+    /** Path hạ tầng luôn mở ở biên: K8s health probe, scrape Prometheus, trang fallback. */
+    private static final String[] INFRA_PUBLIC = {
+            "/actuator/health/**", "/actuator/info", "/actuator/prometheus", "/__fallback"
+    };
 
     /**
      * Tên claim chứa danh sách role trong JWT, và prefix mà Spring Security quy ước
@@ -43,25 +52,39 @@ public class SecurityConfig {
 
     @Bean
     public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http,
-                                                            ReactiveJwtDecoder jwtDecoder) {
+                                                            ReactiveJwtDecoder jwtDecoder,
+                                                            GatewayAccessProperties access) {
         http
             // Gateway là API stateless (không session, không form login) → tắt CSRF.
             .csrf(ServerHttpSecurity.CsrfSpec::disable)
-            .authorizeExchange(exchange -> exchange
-                // Path hạ tầng: health probe của K8s + scrape Prometheus → luôn mở.
-                .pathMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
-                // Trang fallback khi circuit breaker mở → phải mở để trả lỗi nhã nhặn.
-                .pathMatchers("/__fallback").permitAll()
-                // Đăng ký/đăng nhập: chưa có token thì lấy token ở đâu → bắt buộc public.
-                .pathMatchers("/api/auth/**").permitAll()
-                // Mọi request còn lại bắt buộc có JWT hợp lệ.
-                .anyExchange().authenticated())
+            .authorizeExchange(exchange -> applyAccessRules(exchange, access))
             // Bật resource-server: lấy Bearer token, verify bằng jwtDecoder bên dưới,
             // rồi chuyển claim "roles" thành authority để phân quyền.
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
                 .jwtDecoder(jwtDecoder)
                 .jwtAuthenticationConverter(rolesAuthenticationConverter())));
         return http.build();
+    }
+
+    /**
+     * Dựng edge-policy từ KHAI BÁO trong properties (xem {@link GatewayAccessProperties}).
+     * Thứ tự đăng ký = thứ tự xét (khớp trước thắng): hạ tầng trước, rồi {@code rules} theo
+     * đúng thứ tự khai báo, cuối cùng anyExchange = authenticated.
+     */
+    private static void applyAccessRules(AuthorizeExchangeSpec exchange, GatewayAccessProperties access) {
+        // Path hạ tầng (health/metrics) + fallback của circuit breaker → luôn mở.
+        exchange.pathMatchers(INFRA_PUBLIC).permitAll();
+        for (GatewayAccessProperties.Rule rule : access.getRules()) {
+            var matcher = (rule.getMethod() == null || rule.getMethod().isBlank())
+                    ? exchange.pathMatchers(rule.getPattern())
+                    : exchange.pathMatchers(HttpMethod.valueOf(rule.getMethod().toUpperCase()), rule.getPattern());
+            switch (rule.getAccess()) {
+                case PERMIT_ALL -> matcher.permitAll();
+                case AUTHENTICATED -> matcher.authenticated();
+            }
+        }
+        // Mọi request còn lại bắt buộc có JWT hợp lệ.
+        exchange.anyExchange().authenticated();
     }
 
     /**

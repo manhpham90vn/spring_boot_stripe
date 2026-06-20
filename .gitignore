@@ -8,5 +8,8 @@ dist/
 dist-ssr/
 *.local
 
+# Java / Maven build output
+target/
+
 # Generated JWT signing keys (never commit secrets)
 infra/keys/*.pem

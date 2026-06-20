@@ -1,8 +1,5 @@
 package com.manhpham.common.security;
 
-import java.util.Arrays;
-import java.util.stream.Stream;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -11,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -31,10 +29,11 @@ import org.springframework.security.web.SecurityFilterChain;
  * đến từ token đã xác thực mật mã, không tin bất kỳ header nào do client/gateway
  * gắn vào, nên không thể giả mạo dù gọi thẳng service trong cluster.
  *
- * <p>Service chỉ cần: thêm dependency {@code common-security} và đặt
- * {@code spring.security.oauth2.resourceserver.jwt.jwk-set-uri} +
- * {@code app.security.issuer}. Muốn ghi đè thì tự khai {@code SecurityFilterChain}
- * hoặc {@code JwtDecoder} của riêng mình — các bean dưới đây sẽ tự nhường.
+ * <p>Service chỉ cần: thêm dependency {@code common-security}, đặt
+ * {@code spring.security.oauth2.resourceserver.jwt.jwk-set-uri} + {@code app.security.issuer},
+ * và KHAI LUẬT PHÂN QUYỀN bằng {@code app.security.rules[...]} (xem {@link ResourceServerProperties}).
+ * Không phải viết SecurityConfig riêng nữa. Muốn ghi đè hoàn toàn thì tự khai
+ * {@code SecurityFilterChain}/{@code JwtDecoder} của mình — các bean dưới đây sẽ tự nhường.
  */
 @AutoConfiguration
 @ConditionalOnClass({SecurityFilterChain.class, JwtDecoder.class})
@@ -53,6 +52,14 @@ public class ResourceServerAutoConfiguration {
     };
 
     /**
+     * Quy ước API NỘI BỘ (service↔service). Để permitAll ở tầng app vì lời gọi nội bộ
+     * không mang JWT người dùng; rào chắn THẬT là ở tầng mạng — gateway KHÔNG khai route
+     * cho {@code /internal/**} (không với tới từ ngoài) + K8s NetworkPolicy chỉ cho
+     * service trong cluster gọi nhau. Xem docs/SECURITY-ACCESS-CONTROL.md.
+     */
+    private static final String INTERNAL_PREFIX = "/internal/**";
+
+    /**
      * Tên claim chứa danh sách role trong JWT, và prefix mà Spring Security quy ước
      * cho authority ({@code USER} → {@code ROLE_USER}). Quy ước này phải KHỚP với phía
      * phát token (Auth) và với gateway (apigateway/SecurityConfig) — sửa đây nhớ sửa cả đó.
@@ -64,20 +71,35 @@ public class ResourceServerAutoConfiguration {
     @ConditionalOnMissingBean
     public SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http,
             ResourceServerProperties props) throws Exception {
-        String[] publicPaths = Stream.concat(
-                        Arrays.stream(INFRA_PUBLIC),
-                        props.getPublicPaths().stream())
-                .toArray(String[]::new);
-
         http
                 // API stateless: không session, không CSRF (CSRF chỉ có ý nghĩa với cookie/session).
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        // Path hạ tầng + path public riêng của service thì cho qua...
-                        .requestMatchers(publicPaths).permitAll()
-                        // ...còn lại bắt buộc JWT hợp lệ (kể cả khi bị gọi thẳng trong cluster).
-                        .anyRequest().authenticated())
+                // Dựng bảng phân quyền từ KHAI BÁO trong properties (xem ResourceServerProperties).
+                // Thứ tự đăng ký = thứ tự xét (khớp trước thắng): built-in trước, rồi rules, cuối là anyRequest.
+                .authorizeHttpRequests(auth -> {
+                    // 1) Hạ tầng (health/metrics/swagger) + API nội bộ (rào ở tầng mạng) → luôn mở.
+                    auth.requestMatchers(INFRA_PUBLIC).permitAll();
+                    auth.requestMatchers(INTERNAL_PREFIX).permitAll();
+                    // 2) Lối tắt public-paths đơn giản (permitAll, mọi method).
+                    for (String p : props.getPublicPaths()) {
+                        auth.requestMatchers(p).permitAll();
+                    }
+                    // 3) Luật chi tiết (có thể kèm method + role), áp theo đúng thứ tự khai báo.
+                    for (ResourceServerProperties.Rule rule : props.getRules()) {
+                        var matcher = (rule.getMethod() == null || rule.getMethod().isBlank())
+                                ? auth.requestMatchers(rule.getPattern())
+                                : auth.requestMatchers(HttpMethod.valueOf(rule.getMethod().toUpperCase()),
+                                        rule.getPattern());
+                        switch (rule.effectiveAccess()) {
+                            case PERMIT_ALL -> matcher.permitAll();
+                            case HAS_ROLE -> matcher.hasRole(rule.getRole());
+                            case AUTHENTICATED -> matcher.authenticated();
+                        }
+                    }
+                    // 4) Còn lại: bắt buộc JWT hợp lệ (kể cả khi bị gọi thẳng trong cluster).
+                    auth.anyRequest().authenticated();
+                })
                 // Bật resource-server: verify Bearer JWT bằng jwtDecoder bên dưới, rồi
                 // chuyển claim "roles" thành authority để @PreAuthorize/hasRole hoạt động.
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
