@@ -1,5 +1,6 @@
 package com.manhpham.ticket.services.impl;
 
+import com.manhpham.ticket.client.CatalogClient;
 import com.manhpham.ticket.dto.TicketResponse;
 import com.manhpham.ticket.dto.ValidateResponse;
 import com.manhpham.ticket.entities.IssuedTicket;
@@ -23,6 +24,7 @@ public class TicketServiceImpl implements TicketService {
 
     private final IssuedTicketRepository tickets;
     private final QrSigner qrSigner;
+    private final CatalogClient catalog;
 
     @Override
     @Transactional
@@ -32,13 +34,28 @@ public class TicketServiceImpl implements TicketService {
             log.info("Đơn {} đã phát vé trước đó — bỏ qua", event.orderId());
             return;
         }
-        for (int i = 0; i < event.quantity(); i++) {
-            IssuedTicket t = IssuedTicket.create(
-                    event.orderId(), event.userId(), event.eventId(), event.ticketTypeId());
-            t.assignQrToken(qrSigner.sign(t.getId())); // QR ký số trên ticketId
-            tickets.save(t);
+        if (event.seatIds() != null && !event.seatIds().isEmpty()) {
+            // SEATED: 1 vé/ghế, gắn seat_id + seat_label (resolve nhãn từ Catalog).
+            for (UUID seatId : event.seatIds()) {
+                IssuedTicket t = IssuedTicket.create(
+                        event.orderId(), event.userId(), event.eventId(), event.ticketTypeId());
+                t.assignSeat(seatId, catalog.getSeat(seatId).label());
+                t.assignQrToken(qrSigner.sign(t.getId()));
+                tickets.save(t);
+            }
+            log.info("Đã phát {} vé SEATED cho đơn {} (user {})",
+                    event.seatIds().size(), event.orderId(), event.userId());
+        } else {
+            // GA: phát quantity vé không gắn ghế.
+            for (int i = 0; i < event.quantity(); i++) {
+                IssuedTicket t = IssuedTicket.create(
+                        event.orderId(), event.userId(), event.eventId(), event.ticketTypeId());
+                t.assignQrToken(qrSigner.sign(t.getId())); // QR ký số trên ticketId
+                tickets.save(t);
+            }
+            log.info("Đã phát {} vé GA cho đơn {} (user {})",
+                    event.quantity(), event.orderId(), event.userId());
         }
-        log.info("Đã phát {} vé cho đơn {} (user {})", event.quantity(), event.orderId(), event.userId());
     }
 
     @Override

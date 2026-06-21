@@ -9,6 +9,8 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -41,6 +43,11 @@ public class Order {
 
     @Column(nullable = false, updatable = false)
     private int quantity;
+
+    // SEATED: danh sách ghế đã chọn (= Catalog.seat_map.id). NULL với GA.
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "seat_ids", columnDefinition = "uuid[]", updatable = false)
+    private UUID[] seatIds;
 
     @Column(name = "amount_minor", nullable = false, updatable = false)
     private long amountMinor;
@@ -75,7 +82,7 @@ public class Order {
     }
 
     public static Order create(UUID userId, String email, UUID eventId, UUID ticketTypeId, int quantity,
-                               long amountMinor, String currency) {
+                               UUID[] seatIds, long amountMinor, String currency) {
         Order o = new Order();
         o.id = UUID.randomUUID();
         o.userId = userId;
@@ -83,6 +90,7 @@ public class Order {
         o.eventId = eventId;
         o.ticketTypeId = ticketTypeId;
         o.quantity = quantity;
+        o.seatIds = seatIds;
         o.amountMinor = amountMinor;
         o.currency = currency;
         o.status = OrderStatus.PENDING;

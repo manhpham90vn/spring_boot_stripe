@@ -5,6 +5,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -26,6 +27,16 @@ public class InventoryClient {
                 .uri("/internal/holds")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("ticketTypeId", ticketTypeId, "quantity", quantity, "orderId", orderId))
+                .retrieve()
+                .body(HoldResult.class);
+    }
+
+    /** SEATED: giữ các ghế cụ thể (SET NX từng ghế ở Inventory). */
+    public HoldResult holdSeats(UUID ticketTypeId, List<UUID> seatIds, UUID orderId) {
+        return http.post()
+                .uri("/internal/holds")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("ticketTypeId", ticketTypeId, "seatIds", seatIds, "orderId", orderId))
                 .retrieve()
                 .body(HoldResult.class);
     }

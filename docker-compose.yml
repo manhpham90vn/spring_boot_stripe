@@ -8,8 +8,8 @@ x-app: &app
   image: ticketing-dev:latest
 
 x-spring-env: &spring-env
-  SPRING_DATASOURCE_USERNAME: app
-  SPRING_DATASOURCE_PASSWORD: app
+  SPRING_DATASOURCE_USERNAME: ${DB_USER:-app}
+  SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-app}
   SPRING_DATA_REDIS_HOST: redis
   SPRING_DATA_REDIS_PORT: "6379"
   SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS: kafka:29092
@@ -36,8 +36,8 @@ services:
       - "-c"
       - "max_slot_wal_keep_size=8GB"
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
+      POSTGRES_USER: ${DB_USER:-app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-app}
       POSTGRES_DB: app
     ports:
       - "5432:5432"
@@ -129,10 +129,6 @@ services:
     depends_on:
       connect:
         condition: service_healthy
-      # Mỗi service PRODUCER (có bảng outbox + 1 file connector trong infra/debezium/)
-      # phải healthy TRƯỚC khi đăng ký, để publication được tạo trên bảng outbox đã tồn
-      # tại. THÊM PRODUCER MỚI: (1) thả infra/debezium/<svc>-outbox-connector.json, và
-      # (2) thêm một dòng "<svc>: { condition: service_healthy }" vào đây.
       auth:
         condition: service_healthy
       order:
@@ -146,8 +142,6 @@ services:
       - -c
       - |
         until curl -sf http://connect:8083/ >/dev/null; do echo 'waiting for connect...'; sleep 3; done
-        # Drop-a-file: tự đăng ký MỌI connector trong /config. Tên file = tên connector.
-        # 201 = tạo mới, 409 = đã tồn tại (đều OK, idempotent); mã khác = lỗi → exit != 0.
         rc=0
         for f in /config/*.json; do
           name=$$(basename "$$f" .json)
@@ -156,7 +150,7 @@ services:
           echo "register $$name -> HTTP $$code"; cat /tmp/resp; echo
           case "$$code" in
             201|409) ;;
-            *) echo "  !! $$name dang ky that bai"; rc=1 ;;
+            *) echo "  !! $$name registration failed"; rc=1 ;;
           esac
         done
         exit $$rc
@@ -388,9 +382,7 @@ services:
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ticket
-      # /api/ticket/** cần JWT → ticket phải tự verify token bằng JWKS của Auth.
-      # Thiếu hai biến này, ticket mặc định JWK_SET_URI=localhost:8081 (chính nó) →
-      # không tải nổi public key → 401 mọi token hợp lệ. Khớp pattern của order.
+      SERVICES_CATALOG_URL: http://catalog:8082
       JWK_SET_URI: http://auth:8081/internal/jwks
       JWT_ISSUER: auth
     volumes:
@@ -406,10 +398,13 @@ services:
     <<: *app
     container_name: ticketing-notification
     depends_on:
+      postgres:
+        condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
       <<: *spring-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification
       SPRING_MAIL_HOST: mailpit
       SPRING_MAIL_PORT: "1025"
     volumes:
@@ -465,6 +460,14 @@ services:
       - "80:80"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ticketing-cloudflared
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    command: tunnel --no-autoupdate --url http://nginx:80
 
 volumes:
   maven-cache:

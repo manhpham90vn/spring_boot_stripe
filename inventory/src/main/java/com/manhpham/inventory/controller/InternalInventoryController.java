@@ -36,7 +36,14 @@ public class InternalInventoryController {
     @PutMapping("/stock/{ticketTypeId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void seed(@PathVariable UUID ticketTypeId, @Valid @RequestBody SeedStockRequest request) {
-        inventory.seed(ticketTypeId, request.eventId(), request.totalQty());
+        if (request.seated()) {
+            inventory.seedSeats(ticketTypeId, request.eventId(), request.seatIds());
+        } else {
+            if (request.totalQty() == null) {
+                throw new IllegalArgumentException("GA seed cần totalQty");
+            }
+            inventory.seed(ticketTypeId, request.eventId(), request.totalQty());
+        }
     }
 
     /** Số vé còn lại. */

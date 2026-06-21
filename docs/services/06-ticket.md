@@ -40,9 +40,9 @@ phát vé + sinh **QR code ký số**. Validate khi quét tại cổng (một-v�
 `TicketResponse`: `{id,orderId,eventId,ticketTypeId,seatLabel?,status,qrToken,issuedAt}`.
 
 ## Consume Kafka
-`OrderCompleted {orderId,userId,email,eventId,ticketTypeId,quantity,...}` từ
-`order.events` → tạo `quantity` vé (SEATED: 1 vé/ghế, gắn seat_id/seat_label) →
-ký QR → lưu. Idempotent theo `orderId`.
+`OrderCompleted {orderId,userId,email,eventId,ticketTypeId,quantity,seatIds[],...}` từ
+`order.events` → GA: tạo `quantity` vé; SEATED: 1 vé/ghế (gắn seat_id + seat_label resolve từ
+Catalog `GET /internal/seats/{seatId}`) → ký QR → lưu. Idempotent theo `orderId`.
 
 ## Validate tại cổng
 ```

@@ -36,6 +36,13 @@ public class IssuedTicket {
     @Column(name = "ticket_type_id", nullable = false, updatable = false)
     private UUID ticketTypeId;
 
+    // SEATED: ghế cụ thể của vé này (= Catalog.seat_map.id) + nhãn in lên vé. NULL với GA.
+    @Column(name = "seat_id", updatable = false)
+    private UUID seatId;
+
+    @Column(name = "seat_label", length = 32, updatable = false)
+    private String seatLabel;
+
     @Column(name = "qr_token", nullable = false, columnDefinition = "text")
     private String qrToken;
 
@@ -68,6 +75,12 @@ public class IssuedTicket {
 
     public void assignQrToken(String qrToken) {
         this.qrToken = qrToken;
+    }
+
+    /** SEATED: gắn ghế cho vé (gọi trước khi lưu). */
+    public void assignSeat(UUID seatId, String seatLabel) {
+        this.seatId = seatId;
+        this.seatLabel = seatLabel;
     }
 
     /** Đánh dấu đã vào cổng. Idempotent-an toàn: chỉ chuyển khi đang VALID. */

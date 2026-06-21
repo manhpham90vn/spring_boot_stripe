@@ -2,6 +2,7 @@ package com.manhpham.catalog.controller;
 
 import com.manhpham.catalog.dto.EventDetailResponse;
 import com.manhpham.catalog.dto.EventSummaryResponse;
+import com.manhpham.catalog.dto.SeatResponse;
 import com.manhpham.catalog.dto.TicketTypeResponse;
 import com.manhpham.catalog.dto.VenueResponse;
 import com.manhpham.catalog.services.EventService;
@@ -47,6 +48,12 @@ public class PublicCatalogController {
     public TicketTypeResponse ticketTypeDetail(@PathVariable UUID eventId,
             @PathVariable UUID ticketTypeId) {
         return eventService.getTicketType(eventId, ticketTypeId);
+    }
+
+    /** Bản đồ ghế của loại vé SEATED (cho FE chọn ghế). Trạng thái bán/free thuộc Inventory. */
+    @GetMapping("/events/{eventId}/ticket-types/{ticketTypeId}/seats")
+    public List<SeatResponse> listSeats(@PathVariable UUID eventId, @PathVariable UUID ticketTypeId) {
+        return eventService.listSeats(eventId, ticketTypeId);
     }
 
     @GetMapping("/venues")

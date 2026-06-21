@@ -15,6 +15,7 @@ public record UpdateTicketTypeRequest(
         // ISO-4217, vd "USD", "JPY", "VND".
         @NotBlank @Pattern(regexp = "[A-Z]{3}", message = "currency phải là mã ISO-4217 3 ký tự in hoa") String currency,
         @Min(1) int maxPerOrder,
-        // Tổng số vé phát hành — đặt lại tồn ở Inventory (chỉ cho sửa khi sự kiện còn DRAFT).
-        @NotNull @PositiveOrZero Integer totalQty) {
+        // GA: tổng số vé (bắt buộc, đặt lại tồn ở Inventory). SEATED: bỏ trống (ghế bất biến).
+        // Chỉ cho sửa khi sự kiện còn DRAFT.
+        @PositiveOrZero Integer totalQty) {
 }

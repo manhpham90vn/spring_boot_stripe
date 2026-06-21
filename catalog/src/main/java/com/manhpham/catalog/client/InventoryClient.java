@@ -5,6 +5,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,6 +34,16 @@ public class InventoryClient {
                 .uri("/internal/stock/{ticketTypeId}", ticketTypeId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("eventId", eventId, "totalQty", totalQty))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    /** Seed tồn SEATED: gửi danh sách seatId (= seat_map.id) để Inventory dựng seat_inventory. */
+    public void seedSeats(UUID ticketTypeId, UUID eventId, List<UUID> seatIds) {
+        http.put()
+                .uri("/internal/stock/{ticketTypeId}", ticketTypeId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("eventId", eventId, "seatIds", seatIds))
                 .retrieve()
                 .toBodilessEntity();
     }

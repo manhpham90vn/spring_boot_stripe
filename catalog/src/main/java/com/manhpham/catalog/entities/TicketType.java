@@ -2,6 +2,8 @@ package com.manhpham.catalog.entities;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
@@ -29,6 +31,11 @@ public class TicketType {
 
     @Column(name = "event_id", nullable = false, updatable = false)
     private UUID eventId;
+
+    // GA (đếm số lượng) vs SEATED (ghế ngồi, có seat_map). Bất biến sau khi tạo.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16, updatable = false)
+    private TicketTypeKind kind;
 
     @Column(nullable = false, length = 120)
     private String name;
@@ -60,10 +67,11 @@ public class TicketType {
         // for JPA
     }
 
-    public static TicketType create(UUID eventId, String name, String description,
+    public static TicketType create(UUID eventId, TicketTypeKind kind, String name, String description,
             long priceMinor, String currency, int maxPerOrder) {
         TicketType t = new TicketType();
         t.eventId = eventId;
+        t.kind = kind;
         t.name = name;
         t.description = description;
         t.priceMinor = priceMinor;

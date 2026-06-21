@@ -28,5 +28,5 @@ hợp đồng API, event Kafka, invariant, config) — **căn cứ để triển
 | Topic | Payload | Producer → Consumer |
 |---|---|---|
 | `payment.events` | PaymentSettled `{orderId,paymentId,status,ref}` | Payment → Order |
-| `order.events` | OrderCompleted `{orderId,userId,email,eventId,ticketTypeId,quantity,amountMinor,currency}` | Order → Ticket, Notification |
+| `order.events` | OrderCompleted `{orderId,userId,email,eventId,ticketTypeId,quantity,seatIds[],amountMinor,currency}` | Order → Ticket, Notification |
 | `user.events` | UserRegistered `{userId,email}` | Auth → Notification |

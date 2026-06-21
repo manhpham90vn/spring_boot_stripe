@@ -2,6 +2,7 @@ package com.manhpham.catalog.handle;
 
 import com.manhpham.catalog.utils.exception.CatalogConflictException;
 import com.manhpham.catalog.utils.exception.EventNotFoundException;
+import com.manhpham.catalog.utils.exception.SeatNotFoundException;
 import com.manhpham.catalog.utils.exception.TicketTypeNotFoundException;
 import com.manhpham.catalog.utils.exception.VenueNotFoundException;
 import com.manhpham.catalog.utils.response.ApiError;
@@ -26,7 +27,7 @@ public class GlobalExceptionHandler {
     // Gom 3 loại "không tìm thấy" vào MỘT handler vì cùng trả 404 — đỡ lặp code. Tham số
     // khai kiểu cha RuntimeException để nhận được cả ba.
     @ExceptionHandler({VenueNotFoundException.class, EventNotFoundException.class,
-            TicketTypeNotFoundException.class})
+            TicketTypeNotFoundException.class, SeatNotFoundException.class})
     public ResponseEntity<ApiError> handleNotFound(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(HttpStatus.NOT_FOUND.value(), "Not Found", ex.getMessage()));
@@ -37,6 +38,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleConflict(CatalogConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage()));
+    }
+
+    /** Lỗi đầu vào không hợp lệ về nghiệp vụ (vd SEATED nhưng thiếu seats) → 400. */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiError> handleBadRequest(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest()
+                .body(ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

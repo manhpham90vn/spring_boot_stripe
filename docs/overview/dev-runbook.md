@@ -23,8 +23,8 @@ docker compose logs -f auth   # theo dõi log một service
 1. `jwt-keys-init` — sinh cặp khoá RSA vào `infra/keys/` (nếu chưa có) cho Auth ký JWT.
 2. `common-security-init` — `mvn install` module `common-security` vào maven-cache để
    các service servlet dùng được.
-3. `postgres` init — tạo các DB `auth, catalog, inventory, order, payment, ticket`
-   (`infra/postgres/init/01-create-databases.sql`).
+3. `postgres` init — tạo các DB `auth, catalog, inventory, order, payment, ticket,
+   notification` (`infra/postgres/init/01-create-databases.sql`).
 4. `minio-init` — tạo bucket `event-images`, `ticket-qr`.
 5. `connect-init` — đăng ký **mọi** connector Debezium trong `infra/debezium/*.json`
    (xem [`outbox-debezium.md`](../standards/outbox-debezium.md)).
@@ -42,14 +42,28 @@ docker compose logs -f auth   # theo dõi log một service
 | catalog | :8082 | |
 | inventory · order | :8083 · :8084 | luồng mua chạy e2e |
 | payment · ticket | :8086 · :8087 | payment: chuyển sang Stripe thật (bỏ mock) |
-| notification · waitingroom | :8088 · :8089 | notification: consumer Kafka · waitingroom: chưa dựng |
+| notification · waitingroom | :8088 · :8089 | notification: consumer Kafka + DB dedup · waitingroom: chưa dựng |
 | **Swagger UI** | http://localhost/swagger | Gom OpenAPI mọi service |
 | **Mailpit** (xem mail dev) | http://localhost:8025 | SMTP nhận ở :1025 |
 | **MinIO console** | http://localhost:9001 | user/pass: `minioadmin`/`minioadmin`; API :9000 |
 | **Kafka Connect REST** | http://localhost:8085 | trạng thái Debezium connector |
+| **cloudflared (tunnel)** | profile `tunnel` | Public URL HTTPS cho Stripe webhook → nginx → payment |
 | PostgreSQL | :5432 | user/pass/db: `app`/`app` (mỗi service một DB) |
 | Redis | :6379 | |
 | Kafka | :9092 | |
+
+### Webhook Stripe vào máy dev — 2 cách
+- **`stripe listen`** (nhanh, không cần public URL): `stripe listen --forward-to localhost/webhooks/stripe`
+  → in ra `whsec_...`; đặt `STRIPE_WEBHOOK_SECRET` rồi restart payment.
+- **Cloud tunnel** (để Stripe Dashboard gọi vào URL thật):
+  ```bash
+  docker compose --profile tunnel up -d cloudflared
+  docker compose logs -f cloudflared        # đọc https://<random>.trycloudflare.com
+  ```
+  Dán `https://<random>.trycloudflare.com/webhooks/stripe` vào Stripe Dashboard (endpoint),
+  lấy `whsec_...` của endpoint đó → đặt `STRIPE_WEBHOOK_SECRET`. URL quick tunnel **đổi mỗi
+  lần khởi động**; muốn cố định → named tunnel (`CLOUDFLARE_TUNNEL_TOKEN`, xem comment compose).
+  Tunnel trỏ vào **nginx** (DMZ) nên chỉ lộ `/webhooks`, `/api`, `/health`, `/swagger` — KHÔNG lộ `/internal`.
 
 ## 4. Kiểm tra "có gãy gì không" (smoke)
 Chạy nhanh bằng `curl` qua nginx (edge). **Smoke health + routing:**

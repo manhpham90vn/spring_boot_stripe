@@ -34,7 +34,7 @@
 | 4 | `order` | 8084 | `order` | — | **Saga orchestrator** luồng mua. Outbox. |
 | 5 | `payment` | 8086 | `payment` | — | Cổng **duy nhất** gọi Stripe + webhook. Rate limiter + circuit breaker. |
 | 6 | `ticket` | 8087 | `ticket` | — | Vé đã phát, QR ký số. Consume Kafka. |
-| 7 | `notification` | 8088 | — | — | Gửi email/SMS. Gần như stateless, consume Kafka. |
+| 7 | `notification` | 8088 | `notification` | — | Gửi email/SMS, consume Kafka. DB chỉ để **dedup** (`sent_notifications`) chống gửi trùng. |
 | 8 | `waitingroom` | 8089 | — | Redis | Van chống spike (sorted set + CAPTCHA). |
 
 > Cổng 8085 để trống (payment = 8086). Service gọi nhau qua **K8s DNS nội bộ**
@@ -143,6 +143,9 @@ Chỉ thêm cái **thực sự dùng**. Bài học: producer event **không** c�
 ### 5.3. Consumer thuần (`notification`)
 - `spring-cloud-starter-stream-kafka` (consume), `spring-boot-starter-mail`
 - `spring-boot-starter-web` (chỉ để chạy actuator/swagger — không REST nghiệp vụ)
+- `spring-boot-starter-data-jpa` + `postgresql` + Flyway: bảng `sent_notifications` (**dedup**
+  chống Kafka at-least-once gửi trùng — xem [`07-notification.md`](../services/07-notification.md)).
+- `resilience4j-spring-boot4`: `@Retry` backoff khi SMTP lỗi tạm thời.
 - Observability + Lombok + test.
 
 ---
@@ -202,7 +205,8 @@ Connector: `infra/debezium/<svc>-outbox-connector.json` (compose) và
   spring.cloud.stream.default.consumer.auto-offset-reset=earliest
   ```
 - Consumer phải **idempotent** (event id) và nên có **DLQ + retry** trước khi tin cậy
-  ở production (notification hiện mới nuốt lỗi mail — TODO wire DLQ).
+  ở production. `notification` đã có **dedup** (`sent_notifications.dedup_key` UNIQUE) +
+  `@Retry` backoff SMTP, hết retry ghi `FAILED` (chưa wire DLQ — xử lại qua job/DLT).
 
 ### 6.3. Saga (luồng mua vé)
 `order` là **orchestrator**: tạo đơn → gọi inventory giữ chỗ → gọi payment thu tiền →

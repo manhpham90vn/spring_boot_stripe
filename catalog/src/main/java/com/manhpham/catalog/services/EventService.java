@@ -4,6 +4,7 @@ import com.manhpham.catalog.dto.CreateEventRequest;
 import com.manhpham.catalog.dto.CreateTicketTypeRequest;
 import com.manhpham.catalog.dto.EventDetailResponse;
 import com.manhpham.catalog.dto.EventSummaryResponse;
+import com.manhpham.catalog.dto.SeatResponse;
 import com.manhpham.catalog.dto.TicketTypeResponse;
 import com.manhpham.catalog.dto.UpdateEventRequest;
 import com.manhpham.catalog.dto.UpdateTicketTypeRequest;
@@ -29,6 +30,12 @@ public interface EventService {
 
     /** Một loại vé cụ thể (phải thuộc {@code eventId}). */
     TicketTypeResponse getTicketType(UUID eventId, UUID ticketTypeId);
+
+    /** Bản đồ ghế của một loại vé SEATED (cho FE chọn ghế). 400 nếu loại vé là GA. */
+    List<SeatResponse> listSeats(UUID eventId, UUID ticketTypeId);
+
+    /** Tra một ghế theo seatId (internal — Ticket resolve label lúc phát vé). 404 nếu không có. */
+    SeatResponse getSeat(UUID seatId);
 
     // ---- Ghi (admin) -------------------------------------------------------
     EventDetailResponse create(CreateEventRequest request);

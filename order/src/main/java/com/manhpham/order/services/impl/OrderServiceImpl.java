@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -57,16 +59,23 @@ public class OrderServiceImpl implements OrderService {
         } catch (HttpClientErrorException.NotFound e) {
             throw new TicketTypeUnavailableException(req.ticketTypeId());
         }
-        long amount = tt.priceMinor() * req.quantity();
+        int count = req.count();
+        if (count < 1) {
+            throw new IllegalArgumentException("Cần quantity (GA) hoặc seatIds (SEATED)");
+        }
+        long amount = tt.priceMinor() * count;
+        UUID[] seatArr = req.seated() ? req.seatIds().toArray(UUID[]::new) : null;
 
         // (2) Tạo đơn PENDING (commit ngay — save() là một transaction riêng).
         Order order = orders.save(Order.create(
-                userId, email, req.eventId(), req.ticketTypeId(), req.quantity(), amount, tt.currency()));
+                userId, email, req.eventId(), req.ticketTypeId(), count, seatArr, amount, tt.currency()));
 
-        // (3) GIỮ CHỖ. Hết vé (409) → REJECTED, không cần bù trừ.
+        // (3) GIỮ CHỖ (GA: counter · SEATED: SET NX từng ghế). Hết vé (409) → REJECTED.
         InventoryClient.HoldResult hold;
         try {
-            hold = inventory.hold(req.ticketTypeId(), req.quantity(), order.getId());
+            hold = req.seated()
+                    ? inventory.holdSeats(req.ticketTypeId(), req.seatIds(), order.getId())
+                    : inventory.hold(req.ticketTypeId(), count, order.getId());
         } catch (HttpClientErrorException.Conflict e) {
             order.reject("Hết vé / không đủ tồn");
             orders.save(order);
@@ -133,9 +142,11 @@ public class OrderServiceImpl implements OrderService {
                 return;
             }
             order.markPaid(event.paymentId());
+            List<UUID> seatIds = order.getSeatIds() == null ? List.of() : Arrays.asList(order.getSeatIds());
             outbox.fire(OrderCompletedOutboxEvent.of(OrderCompletedEvent.of(
                     order.getId(), order.getUserId(), order.getEmail(), order.getEventId(),
-                    order.getTicketTypeId(), order.getQuantity(), order.getAmountMinor(), order.getCurrency())));
+                    order.getTicketTypeId(), order.getQuantity(), seatIds, order.getAmountMinor(),
+                    order.getCurrency())));
             log.info("Order {} PAID (payment {})", order.getId(), event.paymentId());
         } else {
             inventory.release(order.getHoldId()); // bù trừ

@@ -13,3 +13,6 @@ target/
 
 # Generated JWT signing keys (never commit secrets)
 infra/keys/*.pem
+
+# Local env (secrets: Stripe keys, tunnel token...). Commit .env.example, NOT .env
+.env

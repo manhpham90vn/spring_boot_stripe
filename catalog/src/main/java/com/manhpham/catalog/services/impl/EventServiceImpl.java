@@ -5,20 +5,26 @@ import com.manhpham.catalog.dto.CreateEventRequest;
 import com.manhpham.catalog.dto.CreateTicketTypeRequest;
 import com.manhpham.catalog.dto.EventDetailResponse;
 import com.manhpham.catalog.dto.EventSummaryResponse;
+import com.manhpham.catalog.dto.SeatInput;
+import com.manhpham.catalog.dto.SeatResponse;
 import com.manhpham.catalog.dto.TicketTypeResponse;
 import com.manhpham.catalog.dto.UpdateEventRequest;
 import com.manhpham.catalog.dto.UpdateTicketTypeRequest;
 import com.manhpham.catalog.dto.VenueResponse;
 import com.manhpham.catalog.entities.Event;
 import com.manhpham.catalog.entities.EventStatus;
+import com.manhpham.catalog.entities.SeatMap;
 import com.manhpham.catalog.entities.TicketType;
+import com.manhpham.catalog.entities.TicketTypeKind;
 import com.manhpham.catalog.entities.Venue;
 import com.manhpham.catalog.repositories.jpa.EventRepository;
+import com.manhpham.catalog.repositories.jpa.SeatMapRepository;
 import com.manhpham.catalog.repositories.jpa.TicketTypeRepository;
 import com.manhpham.catalog.repositories.jpa.VenueRepository;
 import com.manhpham.catalog.services.EventService;
 import com.manhpham.catalog.utils.exception.CatalogConflictException;
 import com.manhpham.catalog.utils.exception.EventNotFoundException;
+import com.manhpham.catalog.utils.exception.SeatNotFoundException;
 import com.manhpham.catalog.utils.exception.TicketTypeNotFoundException;
 import com.manhpham.catalog.utils.exception.VenueNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +61,7 @@ public class EventServiceImpl implements EventService {
 
     private final EventRepository events;
     private final TicketTypeRepository ticketTypes;
+    private final SeatMapRepository seatMaps;
     private final VenueRepository venues;
     private final InventoryClient inventoryClient;
 
@@ -151,11 +158,18 @@ public class EventServiceImpl implements EventService {
         if (!events.existsById(eventId)) {
             throw new EventNotFoundException(eventId);
         }
-        TicketType saved = ticketTypes.save(TicketType.create(eventId, request.name(), request.description(),
-                request.priceMinor(), request.currency(), request.maxPerOrder()));
+        TicketTypeKind kind = request.kindOrDefault();
+        TicketType saved = ticketTypes.save(TicketType.create(eventId, kind, request.name(),
+                request.description(), request.priceMinor(), request.currency(), request.maxPerOrder()));
         // Seed tồn kho sang Inventory NGAY trong transaction: nếu Inventory lỗi, exception
         // lan ra làm rollback việc tạo loại vé → không bao giờ có loại vé "treo" thiếu tồn.
-        inventoryClient.seedStock(saved.getId(), eventId, request.totalQty());
+        if (kind == TicketTypeKind.SEATED) {
+            List<UUID> seatIds = createSeatMap(saved.getId(), request);
+            inventoryClient.seedSeats(saved.getId(), eventId, seatIds); // tồn = số ghế
+        } else {
+            requireGaTotalQty(request.totalQty());
+            inventoryClient.seedStock(saved.getId(), eventId, request.totalQty());
+        }
         return TicketTypeResponse.from(saved);
     }
 
@@ -185,7 +199,12 @@ public class EventServiceImpl implements EventService {
     public void delete(UUID eventId) {
         Event event = events.findById(eventId).orElseThrow(() -> new EventNotFoundException(eventId));
         if (event.getStatus() == EventStatus.DRAFT) {
-            // Chưa phát hành → chưa thể có tồn kho/đơn → xóa hẳn (kèm loại vé con).
+            // Chưa phát hành → chưa thể có tồn kho/đơn → xóa hẳn (kèm loại vé + seat_map con).
+            List<UUID> ttIds = ticketTypes.findByEventIdOrderByPriceMinorAsc(eventId).stream()
+                    .map(TicketType::getId).toList();
+            if (!ttIds.isEmpty()) {
+                seatMaps.deleteByTicketTypeIdIn(ttIds); // FK seat_map → ticket_types: xoá trước
+            }
             ticketTypes.deleteByEventId(eventId);
             events.delete(event);
         } else {
@@ -205,7 +224,15 @@ public class EventServiceImpl implements EventService {
         ticketType.update(request.name(), request.description(), request.priceMinor(),
                 request.currency(), request.maxPerOrder());
         // Sửa loại vé chỉ cho phép khi DRAFT (chưa bán, sold_qty=0) → đặt lại tồn an toàn.
-        inventoryClient.seedStock(ticketType.getId(), eventId, request.totalQty());
+        // Ghế SEATED bất biến sau khi tạo → re-seed lại đúng danh sách ghế hiện có (idempotent).
+        if (ticketType.getKind() == TicketTypeKind.SEATED) {
+            List<UUID> seatIds = seatMaps.findByTicketTypeId(ticketType.getId()).stream()
+                    .map(SeatMap::getId).toList();
+            inventoryClient.seedSeats(ticketType.getId(), eventId, seatIds);
+        } else {
+            requireGaTotalQty(request.totalQty());
+            inventoryClient.seedStock(ticketType.getId(), eventId, request.totalQty());
+        }
         return TicketTypeResponse.from(ticketType);
     }
 
@@ -216,10 +243,47 @@ public class EventServiceImpl implements EventService {
         Event event = events.findById(eventId).orElseThrow(() -> new EventNotFoundException(eventId));
         requireDraft(event, "xóa loại vé của");
         TicketType ticketType = loadTicketTypeOfEvent(eventId, ticketTypeId);
+        seatMaps.deleteByTicketTypeId(ticketTypeId); // dọn seat_map (FK) trước khi xoá loại vé
         ticketTypes.delete(ticketType);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<SeatResponse> listSeats(UUID eventId, UUID ticketTypeId) {
+        TicketType tt = loadTicketTypeOfEvent(eventId, ticketTypeId);
+        if (tt.getKind() != TicketTypeKind.SEATED) {
+            throw new IllegalArgumentException("Loại vé " + ticketTypeId + " không phải SEATED");
+        }
+        return seatMaps.findByTicketTypeId(ticketTypeId).stream().map(SeatResponse::from).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SeatResponse getSeat(UUID seatId) {
+        SeatMap seat = seatMaps.findById(seatId).orElseThrow(() -> new SeatNotFoundException(seatId));
+        return SeatResponse.from(seat);
+    }
+
     // ---- helpers -----------------------------------------------------------
+
+    /** Tạo các dòng seat_map cho loại vé SEATED; trả seatId để seed Inventory. */
+    private List<UUID> createSeatMap(UUID ticketTypeId, CreateTicketTypeRequest request) {
+        List<SeatInput> seats = request.seats();
+        if (seats == null || seats.isEmpty()) {
+            throw new IllegalArgumentException("Loại vé SEATED phải kèm danh sách ghế (seats)");
+        }
+        List<SeatMap> rows = seats.stream()
+                .map(s -> SeatMap.create(ticketTypeId, s.section(), s.rowLabel(), s.seatNumber()))
+                .toList();
+        seatMaps.saveAll(rows);
+        return rows.stream().map(SeatMap::getId).toList();
+    }
+
+    private static void requireGaTotalQty(Integer totalQty) {
+        if (totalQty == null) {
+            throw new IllegalArgumentException("Loại vé GA phải có totalQty");
+        }
+    }
 
     /** Loại vé phải tồn tại VÀ thuộc đúng sự kiện (tránh sửa nhầm xuyên event). */
     private TicketType loadTicketTypeOfEvent(UUID eventId, UUID ticketTypeId) {

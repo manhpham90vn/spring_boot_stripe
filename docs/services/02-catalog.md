@@ -67,9 +67,16 @@ và KHÔNG suy ra SOLD_OUT.
 | GET | `/api/catalog/public/events/{id}` | `EventDetail{...,ticketTypes:[TicketType]}` · 404 |
 | GET | `/api/catalog/public/events/{eventId}/ticket-types` | `[TicketType]` |
 | GET | `/api/catalog/public/events/{eventId}/ticket-types/{ttId}` | `TicketType` · 404 |
+| GET | `/api/catalog/public/events/{eventId}/ticket-types/{ttId}/seats` | `[Seat]` (SEATED) · 400 nếu GA |
 | GET | `/api/catalog/public/venues` · `/venues/{id}` | `[Venue]` · `Venue`/404 |
 
 `TicketType` JSON: `{id,name,description,kind,priceMinor,currency,maxPerOrder}`.
+`Seat` JSON: `{seatId,section,rowLabel,seatNumber,label}` (trạng thái bán/free thuộc Inventory).
+
+## API — internal (service↔service)
+| Method | Path | Response |
+|---|---|---|
+| GET | `/internal/seats/{seatId}` | `Seat` · 404 — Ticket resolve nhãn ghế lúc phát vé SEATED |
 
 ## API — admin (ghi, role ADMIN)
 | Method | Path | Ghi chú |
