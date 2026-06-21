@@ -298,6 +298,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalog
       JWK_SET_URI: http://auth:8081/internal/jwks
       JWT_ISSUER: auth
+      SERVICES_INVENTORY_URL: http://inventory:8083
     volumes:
       - ./catalog:/workspace
       - maven-cache:/home/app/.m2

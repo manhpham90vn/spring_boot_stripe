@@ -14,5 +14,7 @@ public record CreateTicketTypeRequest(
         @NotNull @PositiveOrZero Long priceMinor,
         // ISO-4217, vd "USD", "JPY", "VND".
         @NotBlank @Pattern(regexp = "[A-Z]{3}", message = "currency phải là mã ISO-4217 3 ký tự in hoa") String currency,
-        @Min(1) int maxPerOrder) {
+        @Min(1) int maxPerOrder,
+        // Tổng số vé phát hành — KHÔNG lưu ở Catalog, chuyển thẳng sang Inventory để seed tồn.
+        @NotNull @PositiveOrZero Integer totalQty) {
 }

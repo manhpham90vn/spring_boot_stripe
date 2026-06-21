@@ -43,6 +43,7 @@ const tt = reactive<TicketTypePayload>({
   priceMinor: 0,
   currency: 'VND',
   maxPerOrder: 4,
+  totalQty: 100,
 })
 
 async function load() {
@@ -115,6 +116,7 @@ function openTtCreate() {
   tt.priceMinor = 0
   tt.currency = 'VND'
   tt.maxPerOrder = 4
+  tt.totalQty = 100
   ttModalOpen.value = true
 }
 
@@ -125,6 +127,8 @@ function openTtEdit(t: TicketTypeResponse) {
   tt.priceMinor = t.priceMinor
   tt.currency = t.currency
   tt.maxPerOrder = t.maxPerOrder
+  // Catalog không lưu tồn kho → không prefill được; admin nhập lại để ĐẶT LẠI tồn.
+  tt.totalQty = 100
   ttModalOpen.value = true
 }
 
@@ -138,6 +142,7 @@ async function saveTt() {
       priceMinor: Number(tt.priceMinor),
       currency: tt.currency.toUpperCase(),
       maxPerOrder: Number(tt.maxPerOrder),
+      totalQty: Number(tt.totalQty),
     }
     if (ttEditingId.value) await ticketTypes.update(props.id, ttEditingId.value, payload)
     else await ticketTypes.add(props.id, payload)
@@ -299,12 +304,19 @@ async function removeTt(t: TicketTypeResponse) {
             <input v-model="tt.currency" maxlength="3" required style="text-transform: uppercase" />
           </div>
         </div>
-        <div class="field">
-          <label>Tối đa mỗi đơn *</label>
-          <input v-model.number="tt.maxPerOrder" type="number" min="1" required />
+        <div class="grid-2">
+          <div class="field">
+            <label>Tối đa mỗi đơn *</label>
+            <input v-model.number="tt.maxPerOrder" type="number" min="1" required />
+          </div>
+          <div class="field">
+            <label>Tổng tồn kho *</label>
+            <input v-model.number="tt.totalQty" type="number" min="0" required />
+          </div>
         </div>
         <p class="muted" style="font-size: 13px">
           Ví dụ VND 250.000 → nhập <code>250000</code>. USD $50.00 → nhập <code>5000</code>.
+          <br />Tổng tồn kho được seed sang Inventory; khi sửa sẽ <strong>đặt lại</strong> tồn (chỉ cho phép lúc sự kiện còn DRAFT).
         </p>
         <div class="row between" style="margin-top: 18px">
           <button type="button" class="btn" @click="ttModalOpen = false">Huỷ</button>

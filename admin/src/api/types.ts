@@ -72,4 +72,6 @@ export interface TicketTypePayload {
   priceMinor: number
   currency: string
   maxPerOrder: number
+  // Tổng tồn kho — Catalog chuyển sang Inventory để seed (không lưu ở Catalog).
+  totalQty: number
 }

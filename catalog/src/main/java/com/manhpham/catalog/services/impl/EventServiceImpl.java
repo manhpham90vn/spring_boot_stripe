@@ -1,5 +1,6 @@
 package com.manhpham.catalog.services.impl;
 
+import com.manhpham.catalog.client.InventoryClient;
 import com.manhpham.catalog.dto.CreateEventRequest;
 import com.manhpham.catalog.dto.CreateTicketTypeRequest;
 import com.manhpham.catalog.dto.EventDetailResponse;
@@ -55,6 +56,7 @@ public class EventServiceImpl implements EventService {
     private final EventRepository events;
     private final TicketTypeRepository ticketTypes;
     private final VenueRepository venues;
+    private final InventoryClient inventoryClient;
 
     // @Cacheable("events"): kết quả được lưu vào cache "events"; lần gọi sau (cùng tham số)
     // trả thẳng từ cache, không chạm DB. Đây là danh sách công khai → bỏ qua DRAFT.
@@ -151,6 +153,9 @@ public class EventServiceImpl implements EventService {
         }
         TicketType saved = ticketTypes.save(TicketType.create(eventId, request.name(), request.description(),
                 request.priceMinor(), request.currency(), request.maxPerOrder()));
+        // Seed tồn kho sang Inventory NGAY trong transaction: nếu Inventory lỗi, exception
+        // lan ra làm rollback việc tạo loại vé → không bao giờ có loại vé "treo" thiếu tồn.
+        inventoryClient.seedStock(saved.getId(), eventId, request.totalQty());
         return TicketTypeResponse.from(saved);
     }
 
@@ -199,6 +204,8 @@ public class EventServiceImpl implements EventService {
         TicketType ticketType = loadTicketTypeOfEvent(eventId, ticketTypeId);
         ticketType.update(request.name(), request.description(), request.priceMinor(),
                 request.currency(), request.maxPerOrder());
+        // Sửa loại vé chỉ cho phép khi DRAFT (chưa bán, sold_qty=0) → đặt lại tồn an toàn.
+        inventoryClient.seedStock(ticketType.getId(), eventId, request.totalQty());
         return TicketTypeResponse.from(ticketType);
     }
 
