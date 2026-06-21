@@ -387,6 +387,11 @@ services:
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ticket
+      # /api/ticket/** cần JWT → ticket phải tự verify token bằng JWKS của Auth.
+      # Thiếu hai biến này, ticket mặc định JWK_SET_URI=localhost:8081 (chính nó) →
+      # không tải nổi public key → 401 mọi token hợp lệ. Khớp pattern của order.
+      JWK_SET_URI: http://auth:8081/internal/jwks
+      JWT_ISSUER: auth
     volumes:
       - ./ticket:/workspace
       - maven-cache:/home/app/.m2
