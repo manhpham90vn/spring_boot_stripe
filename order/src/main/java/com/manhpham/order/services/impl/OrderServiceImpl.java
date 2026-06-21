@@ -26,15 +26,15 @@ import java.util.UUID;
  * SAGA ORCHESTRATOR event-driven (xem saga-purchase-flow.md §2.1, §3):
  *
  * <pre>
- *  place():  tạo đơn → giữ chỗ → AWAITING_PAYMENT (commit) → KHỞI TẠO thu tiền → trả về.
- *            (saga DỪNG, chờ kết quả thanh toán — đồng bộ thẻ hay bất đồng bộ Konbini đều vậy)
+ *  place():  tạo đơn → giữ chỗ → TẠO PaymentIntent → AWAITING_PAYMENT (commit) → trả clientSecret.
+ *            (saga DỪNG; client xác nhận thẻ qua Payment Element, kết quả về từ webhook)
  *  onPaymentSettled():  SUCCEEDED → chốt SOLD + PAID + phát OrderCompleted
  *                       FAILED    → nhả chỗ + PAYMENT_FAILED   (bù trừ)
  * </pre>
  *
  * <p>place() KHÔNG bọc một {@code @Transactional} lớn: mỗi bước commit riêng (step-wise saga)
- * để (a) không giữ kết nối DB suốt lời gọi remote, và (b) đơn được commit ở AWAITING_PAYMENT
- * TRƯỚC khi gọi Payment → consumer {@code payment.events} chắc chắn thấy đơn khi tiếp tục.
+ * để không giữ kết nối DB suốt lời gọi remote. Đơn commit ở AWAITING_PAYMENT sau khi tạo
+ * PaymentIntent; webhook (→ {@code payment.events}) chỉ tới SAU khi client xác nhận nên không race.
  */
 @Service
 @RequiredArgsConstructor
@@ -73,13 +73,10 @@ public class OrderServiceImpl implements OrderService {
             return OrderResponse.from(order);
         }
 
-        // (4) AWAITING_PAYMENT + COMMIT trước khi gọi Payment → tránh race với consumer.
-        order.awaitPayment(hold.holdId());
-        orders.save(order);
-
-        // (5) KHỞI TẠO thu tiền. Lỗi gọi (Payment down) → bù trừ: nhả chỗ + PAYMENT_FAILED.
+        // (4) TẠO PaymentIntent. Lỗi gọi (Payment down) → bù trừ: nhả chỗ + PAYMENT_FAILED.
+        PaymentClient.IntentResult intent;
         try {
-            payment.charge(order.getId(), amount, tt.currency());
+            intent = payment.createIntent(order.getId(), amount, tt.currency());
         } catch (RuntimeException e) {
             inventory.release(hold.holdId());
             order.failPayment("Lỗi gọi Payment: " + e.getMessage());
@@ -88,9 +85,23 @@ public class OrderServiceImpl implements OrderService {
             return OrderResponse.from(order);
         }
 
-        // Saga DỪNG ở AWAITING_PAYMENT — tiếp tục bất đồng bộ qua onPaymentSettled (payment.events).
-        log.info("Order {} AWAITING_PAYMENT (hold {})", order.getId(), hold.holdId());
-        return OrderResponse.from(order);
+        // Tạo intent lỗi nghiệp vụ (4xx / hết retry) → không có webhook để chờ → bù trừ ngay.
+        if (intent.failed()) {
+            inventory.release(hold.holdId());
+            order.failPayment("Khởi tạo thanh toán thất bại");
+            orders.save(order);
+            log.warn("Order {} PAYMENT_FAILED (intent failed), released hold {}", order.getId(), hold.holdId());
+            return OrderResponse.from(order);
+        }
+
+        // (5) AWAITING_PAYMENT + COMMIT. Webhook chỉ tới SAU khi client xác nhận → không race với consumer.
+        order.awaitPayment(hold.holdId(), intent.paymentId(), intent.stripePiId());
+        orders.save(order);
+
+        // Saga DỪNG ở AWAITING_PAYMENT — tiếp tục async qua onPaymentSettled (payment.events).
+        // Trả clientSecret để FE xác nhận thẻ bằng Payment Element.
+        log.info("Order {} AWAITING_PAYMENT (hold {}, PI {})", order.getId(), hold.holdId(), intent.stripePiId());
+        return OrderResponse.withSecret(order, intent.clientSecret());
     }
 
     @Override

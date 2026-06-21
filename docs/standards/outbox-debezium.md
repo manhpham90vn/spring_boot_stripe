@@ -3,8 +3,8 @@
 > **Mục đích:** giải thích cơ chế phát event giữa các service (outbox + CDC) đang chạy
 > trong repo, và **quy ước để thêm event/producer/consumer mới**. Bám sát code thật:
 > `auth/` (producer mẫu), `notification/` (consumer mẫu), `infra/debezium/`,
-> `docker-compose.yml`. Ràng buộc gốc: [`/CLAUDE.md`](../CLAUDE.md); tổng quan kiến trúc:
-> [`architecture.md`](./architecture.md).
+> `docker-compose.yml`. Ràng buộc gốc: [`/CLAUDE.md`](../../CLAUDE.md); tổng quan kiến trúc:
+> [`architecture.md`](../overview/architecture.md).
 >
 > **TL;DR:** Service ghi event vào **bảng `outbox` cùng transaction nghiệp vụ** (không
 > publish trực tiếp). **Debezium** đọc INSERT từ **WAL của Postgres** (CDC) rồi đẩy lên
@@ -299,7 +299,7 @@ curl -s http://localhost:8025/api/v1/messages | jq '.total'   # hoặc mở http
 ---
 
 ## 10. Liên quan
-- [`architecture.md`](./architecture.md) — bản đồ service & ràng buộc.
-- [`API-CONVENTIONS.md`](./API-CONVENTIONS.md) — quy ước path (event là kênh khác, async).
-- `scripts/smoke-test.sh` — smoke-test HTTP đồng bộ (chưa kiểm luồng mail async; có thể
+- [`architecture.md`](../overview/architecture.md) — bản đồ service & ràng buộc.
+- [`API-CONVENTIONS.md`](API-CONVENTIONS.md) — quy ước path (event là kênh khác, async).
+- `scripts/test.http` — test HTTP đồng bộ (chưa kiểm luồng mail async; có thể
   mở rộng để poll Mailpit sau khi đăng ký).

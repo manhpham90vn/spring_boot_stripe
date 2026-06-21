@@ -1,6 +1,6 @@
 # 4. Order service (`order/`) — Saga orchestrator
 
-> Sâu hơn: [`../saga-purchase-flow.md`](../saga-purchase-flow.md) — happy path, bù trừ, idempotency xuyên service.
+> Sâu hơn: [`saga-purchase-flow.md`](../flows/saga-purchase-flow.md) — happy path, bù trừ, idempotency xuyên service.
 
 ## Trách nhiệm
 **Trái tim điều phối.** Tạo đơn → giữ chỗ (Inventory) → tạo PaymentIntent (Payment)

@@ -73,6 +73,8 @@ export interface OrderResponse {
   amountMinor: number
   currency: string
   paymentId: string | null
+  // Chỉ có ở response của POST /api/order — dùng để xác nhận Payment Element. GET trả null.
+  clientSecret: string | null
   failureReason: string | null
 }
 

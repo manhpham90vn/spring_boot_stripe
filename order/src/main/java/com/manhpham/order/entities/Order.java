@@ -58,6 +58,9 @@ public class Order {
     @Column(name = "payment_id")
     private UUID paymentId;
 
+    @Column(name = "stripe_pi_id")
+    private String stripePiId;
+
     @Column(name = "failure_reason", length = 500)
     private String failureReason;
 
@@ -86,9 +89,11 @@ public class Order {
         return o;
     }
 
-    /** Đã giữ chỗ + đã khởi tạo thu tiền → chờ kết quả (event PaymentSettled). */
-    public void awaitPayment(UUID holdId) {
+    /** Đã giữ chỗ + đã tạo PaymentIntent → chờ webhook (event PaymentSettled). Lưu tham chiếu để resume/bù trừ. */
+    public void awaitPayment(UUID holdId, UUID paymentId, String stripePiId) {
         this.holdId = holdId;
+        this.paymentId = paymentId;
+        this.stripePiId = stripePiId;
         this.status = OrderStatus.AWAITING_PAYMENT;
     }
 

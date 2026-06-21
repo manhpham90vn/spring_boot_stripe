@@ -1,7 +1,8 @@
 package com.manhpham.payment.controller;
 
-import com.manhpham.payment.dto.ChargeRequest;
 import com.manhpham.payment.dto.ChargeResponse;
+import com.manhpham.payment.dto.CreateIntentRequest;
+import com.manhpham.payment.dto.IntentResponse;
 import com.manhpham.payment.services.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,8 +17,8 @@ import java.util.UUID;
 
 /**
  * API NỘI BỘ của Payment ({@code /internal/**}): chỉ Order/saga gọi. Webhook Stripe đi qua
- * đường KHÁC ({@code /webhooks/stripe}, vào thẳng qua nginx/Ingress DMZ — chưa làm ở walking
- * skeleton, xem payment-stripe-flow.md). Không JWT ở đây (rào bằng mạng).
+ * đường KHÁC ({@code /webhooks/stripe}, vào thẳng qua nginx/Ingress DMZ — xem
+ * flows/payment-stripe-flow.md). Không JWT ở đây (rào bằng mạng).
  */
 @RestController
 @RequestMapping("/internal")
@@ -26,10 +27,10 @@ public class InternalPaymentController {
 
     private final PaymentService payments;
 
-    /** Thu tiền cho một đơn (saga bước 3). */
-    @PostMapping("/charges")
-    public ChargeResponse charge(@Valid @RequestBody ChargeRequest request) {
-        return payments.charge(request);
+    /** Tạo PaymentIntent cho một đơn (saga bước 3) → trả clientSecret cho FE xác nhận. */
+    @PostMapping("/payment-intents")
+    public IntentResponse createIntent(@Valid @RequestBody CreateIntentRequest request) {
+        return payments.createIntent(request);
     }
 
     /** Tra trạng thái thanh toán của một đơn — Order dùng cho reconciliation (khi mất event). */

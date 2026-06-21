@@ -42,6 +42,9 @@ public class Payment {
     @Column(name = "payment_ref")
     private String paymentRef;
 
+    @Column(name = "stripe_pi_id")
+    private String stripePiId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -62,7 +65,14 @@ public class Payment {
         return p;
     }
 
-    /** Cập nhật kết quả từ cổng thanh toán (Stripe/mock). */
+    /** Đã tạo PaymentIntent ở Stripe → PROCESSING, lưu tham chiếu PI. Chờ webhook chốt. */
+    public void startIntent(String paymentIntentId) {
+        this.status = PaymentStatus.PROCESSING;
+        this.stripePiId = paymentIntentId;
+        this.paymentRef = paymentIntentId;
+    }
+
+    /** Chốt kết quả cuối từ webhook Stripe (succeeded/failed/canceled). */
     public void settle(PaymentStatus status, String paymentRef) {
         this.status = status;
         this.paymentRef = paymentRef;

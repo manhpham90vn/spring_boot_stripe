@@ -1,9 +1,9 @@
 # Saga — luồng mua vé (design)
 
 > **Trạng thái:** THIẾT KẾ. Luồng mua xuyên Order/Inventory/Payment + bù trừ. Ràng buộc gốc:
-> [`/CLAUDE.md`](../CLAUDE.md). Liên quan: [`inventory-no-oversell.md`](./inventory-no-oversell.md),
-> [`payment-stripe-flow.md`](./payment-stripe-flow.md), [`impl/01-payment-real-stripe.md`](./impl/01-payment-real-stripe.md),
-> [`outbox-debezium.md`](./outbox-debezium.md), [`services/04-order.md`](./services/04-order.md).
+> [`/CLAUDE.md`](../../CLAUDE.md). Liên quan: [`inventory-no-oversell.md`](inventory-no-oversell.md),
+> [`payment-stripe-flow.md`](payment-stripe-flow.md), [`impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md),
+> [`outbox-debezium.md`](../standards/outbox-debezium.md), [`services/04-order.md`](../services/04-order.md).
 
 ---
 
@@ -38,8 +38,8 @@ Client ──POST /api/order──▶ ORDER (orchestrator)
 ```
 
 - Bước (2)(3) là **gọi đồng bộ** service↔service qua `/internal/**` (xem
-  [`API-CONVENTIONS.md`](./API-CONVENTIONS.md)).
-- Bước (4) phát **event async** qua **outbox** (xem [`outbox-debezium.md`](./outbox-debezium.md))
+  [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md)).
+- Bước (4) phát **event async** qua **outbox** (xem [`outbox-debezium.md`](../standards/outbox-debezium.md))
   để Ticket/Notification xử lý — KHÔNG gọi đồng bộ (giảm thời gian giữ chỗ, tách rời).
 
 ### 2.1 ĐỒNG BỘ (thẻ) vs BẤT ĐỒNG BỘ (Konbini/Furikomi)
@@ -51,7 +51,7 @@ Hệ thống hỗ trợ đa phương thức → bước (3)(4) **rẽ hai nhánh
   nhận → chạy bước (4) COMMIT + phát vé. KHÔNG fulfill ngay tại bước (3).
 - **Konbini/Furikomi (bất đồng bộ):** bước (3) chỉ tạo PaymentIntent ở trạng thái
   `processing` và trả mã/hướng dẫn cho khách. Đơn chuyển **`AWAITING_PAYMENT`**, **giữ
-  chỗ vẫn còn** (TTL = hạn thanh toán, [`inventory §3.1`](./inventory-no-oversell.md)).
+  chỗ vẫn còn** (TTL = hạn thanh toán, [`inventory §3.1`](inventory-no-oversell.md)).
   **CHỈ chạy bước (4)** khi nhận **`checkout.session.async_payment_succeeded` /
   `payment_intent.succeeded`** (có thể sau vài giờ→ngày). Nếu hết hạn/không trả →
   `async_payment_failed` → CANCELLED + nhả chỗ + restock + báo khách.
@@ -104,7 +104,7 @@ Mạng có thể timeout rồi retry → mỗi lời gọi service phải **an t
 
 - **Client** chỉ nói chuyện với `/api/order/**` (qua gateway). Không gọi thẳng Inventory/Payment.
 - **Order ↔ Inventory/Payment**: API nội bộ `/internal/**` (gọi qua DNS, không qua gateway;
-  rào bằng NetworkPolicy — xem [`deployment-k8s.md`](./deployment-k8s.md)).
+  rào bằng NetworkPolicy — xem [`deployment-k8s.md`](../ops/deployment-k8s.md)).
 - **Order → Ticket/Notification**: event `OrderCompleted` qua outbox+Kafka (`order.events`).
 - Order sở hữu **đơn + saga state**, dùng **outbox** để phát event (không publish Kafka trực tiếp).
 
@@ -119,5 +119,5 @@ Mạng có thể timeout rồi retry → mỗi lời gọi service phải **an t
 
 ## 8. Thứ tự triển khai
 Lát cắt **thẻ** trước để tiền chạy end-to-end (xem
-[`impl/01-payment-real-stripe.md`](./impl/01-payment-real-stripe.md)); rồi **async
+[`impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md)); rồi **async
 Konbini/Furikomi** và **ghế ngồi** dùng chung khung hold/saga/webhook đã có.

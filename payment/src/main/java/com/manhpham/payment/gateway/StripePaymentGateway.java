@@ -9,7 +9,6 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -17,7 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Cổng thanh toán THẬT qua Stripe (Payment Intents). Bật bằng {@code payment.gateway=stripe}.
+ * Cổng thanh toán THẬT qua Stripe (Payment Intents) — hiện thực DUY NHẤT của {@link PaymentGateway}.
  *
  * <p><b>Tôn trọng giới hạn Stripe (~100–200 req/s):</b>
  * <ul>
@@ -28,13 +27,12 @@ import java.util.UUID;
  *       4xx (thẻ bị từ chối) KHÔNG retry. Hết lần → {@code chargeFallback}.</li>
  * </ul>
  *
- * <p>Dùng API Map-based (ổn định) + {@code Idempotency-Key} để timeout/retry KHÔNG thu hai
- * lần. LƯU Ý (walking skeleton): tạo PaymentIntent ở đây chỉ KHỞI TẠO giao dịch — để THẬT
+ * <p>Dùng API Map-based (ổn định) + {@code Idempotency-Key} để timeout/retry KHÔNG tạo hai
+ * intent. Tạo PaymentIntent ở đây chỉ KHỞI TẠO giao dịch (status {@code PROCESSING}) — để THẬT
  * SỰ {@code succeeded} cần client xác nhận (Payment Element) và <b>webhook</b> báo về
- * (xem {@code WebhookController} + payment-stripe-flow.md). Luồng e2e dev dùng {@link MockPaymentGateway}.
+ * (xem {@code StripeWebhookService} + flows/payment-stripe-flow.md).
  */
 @Component
-@ConditionalOnProperty(name = "payment.gateway", havingValue = "stripe")
 @Slf4j
 public class StripePaymentGateway implements PaymentGateway {
 
@@ -46,44 +44,50 @@ public class StripePaymentGateway implements PaymentGateway {
 
     @Override
     @RateLimiter(name = "stripe")
-    @Retry(name = "stripe", fallbackMethod = "chargeFallback")
-    public ChargeOutcome charge(UUID orderId, long amountMinor, String currency, String idempotencyKey) {
+    @Retry(name = "stripe", fallbackMethod = "createIntentFallback")
+    public IntentResult createIntent(UUID orderId, long amountMinor, String currency, String idempotencyKey) {
         Map<String, Object> params = new HashMap<>();
         params.put("amount", amountMinor);                 // minor units (JPY: KHÔNG ×100)
         params.put("currency", currency.toLowerCase());
-        params.put("metadata", Map.of("order_id", orderId.toString())); // liên kết đơn ↔ PI (2.15)
+        params.put("automatic_payment_methods", Map.of("enabled", true)); // Stripe tự bật PM hợp lệ
+        params.put("metadata", Map.of("order_id", orderId.toString()));    // map đơn ↔ PI ở webhook (2.15)
 
         RequestOptions options = RequestOptions.builder()
                 .setApiKey(apiKey)
-                .setIdempotencyKey(idempotencyKey)         // chống thu hai lần (2.18)
+                .setIdempotencyKey(idempotencyKey)         // gọi lại không tạo 2 intent (2.18)
                 .build();
         try {
             PaymentIntent pi = PaymentIntent.create(params, options);
-            ChargeOutcome.Status status = "succeeded".equals(pi.getStatus())
-                    ? ChargeOutcome.Status.SUCCEEDED
-                    : ChargeOutcome.Status.FAILED; // thường requires_payment_method → chờ webhook xác nhận
+            // Intent vừa tạo ở requires_payment_method → PROCESSING; chờ client xác nhận + webhook.
             log.info("[STRIPE] PaymentIntent {} status={} order={}", pi.getId(), pi.getStatus(), orderId);
-            return new ChargeOutcome(pi.getId(), status);
+            return new IntentResult(pi.getId(), pi.getClientSecret(), IntentResult.Status.PROCESSING);
         } catch (StripeException e) {
             if (isRetryable(e)) {
-                // Ném ra để @Retry thử lại với backoff (không nuốt lỗi tạm thời).
-                throw new StripeTransientException(e);
+                throw new StripeTransientException(e); // @Retry backoff cho lỗi tạm thời
             }
-            // Lỗi nghiệp vụ 4xx (card declined, invalid request) — KHÔNG retry.
+            // Lỗi nghiệp vụ 4xx (invalid request...) — KHÔNG retry.
             log.warn("[STRIPE] business error order={}: {}", orderId, e.getMessage());
-            return new ChargeOutcome(null, ChargeOutcome.Status.FAILED);
+            return new IntentResult(null, null, IntentResult.Status.FAILED);
         }
     }
 
-    /**
-     * Fallback khi đã HẾT số lần retry (lỗi tạm thời kéo dài). Charge nghi "mồ côi" (timeout
-     * không rõ kết cục) → để FAILED; reconciliation định kỳ sẽ phân xử (payment_issue.md 2.18/3.4).
-     */
+    @Override
+    public String retrieveClientSecret(String paymentIntentId) {
+        try {
+            RequestOptions options = RequestOptions.builder().setApiKey(apiKey).build();
+            return PaymentIntent.retrieve(paymentIntentId, options).getClientSecret();
+        } catch (StripeException e) {
+            log.warn("[STRIPE] retrieve client_secret lỗi PI={}: {}", paymentIntentId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** Fallback khi HẾT retry (lỗi tạm thời kéo dài) → FAILED; reconciliation phân xử (2.18/3.4). */
     @SuppressWarnings("unused") // gọi bởi Resilience4j qua tên
-    private ChargeOutcome chargeFallback(UUID orderId, long amountMinor, String currency,
-                                         String idempotencyKey, Throwable t) {
-        log.error("[STRIPE] charge fallback (hết retry) order={}: {}", orderId, t.getMessage());
-        return new ChargeOutcome(null, ChargeOutcome.Status.FAILED);
+    private IntentResult createIntentFallback(UUID orderId, long amountMinor, String currency,
+                                              String idempotencyKey, Throwable t) {
+        log.error("[STRIPE] createIntent fallback (hết retry) order={}: {}", orderId, t.getMessage());
+        return new IntentResult(null, null, IntentResult.Status.FAILED);
     }
 
     /** 429 (rate limit), timeout kết nối, hoặc 5xx → đáng retry. 4xx nghiệp vụ → không. */

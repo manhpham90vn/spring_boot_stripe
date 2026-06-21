@@ -8,7 +8,7 @@ import org.springframework.web.client.RestClient;
 import java.util.Map;
 import java.util.UUID;
 
-/** Gọi API NỘI BỘ của Payment ({@code /internal/charges}) qua DNS để thu tiền. */
+/** Gọi API NỘI BỘ của Payment ({@code /internal/**}) qua DNS để tạo PaymentIntent / tra trạng thái. */
 @Component
 public class PaymentClient {
 
@@ -18,13 +18,14 @@ public class PaymentClient {
         this.http = builder.baseUrl(baseUrl).build();
     }
 
-    public ChargeResult charge(UUID orderId, long amountMinor, String currency) {
+    /** Tạo PaymentIntent cho đơn → trả clientSecret (cho FE) + trạng thái (PROCESSING|FAILED). */
+    public IntentResult createIntent(UUID orderId, long amountMinor, String currency) {
         return http.post()
-                .uri("/internal/charges")
+                .uri("/internal/payment-intents")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("orderId", orderId, "amountMinor", amountMinor, "currency", currency))
                 .retrieve()
-                .body(ChargeResult.class);
+                .body(IntentResult.class);
     }
 
     /** Tra trạng thái thanh toán của đơn — cho reconciliation khi event payment.events bị mất. */
@@ -32,8 +33,15 @@ public class PaymentClient {
         return http.get().uri("/internal/payments/by-order/{id}", orderId).retrieve().body(ChargeResult.class);
     }
 
-    /** status: PENDING | SUCCEEDED | FAILED (chuỗi từ Payment service). */
-    public record ChargeResult(UUID paymentId, UUID orderId, String status, String reference) {
+    /** Kết quả tạo intent. status: PROCESSING (chờ webhook) | FAILED (lỗi tạo, cần bù trừ). */
+    public record IntentResult(UUID paymentId, String stripePiId, String clientSecret, String status) {
+        public boolean failed() {
+            return "FAILED".equals(status);
+        }
+    }
+
+    /** Trạng thái thanh toán (reconciliation). status: PENDING|PROCESSING|SUCCEEDED|FAILED|CANCELED. */
+    public record ChargeResult(UUID paymentId, UUID orderId, String status, String reference, String stripePiId) {
         public boolean succeeded() {
             return "SUCCEEDED".equals(status);
         }

@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { loadStripe } from '@stripe/stripe-js'
+import type { Stripe } from '@stripe/stripe-js'
+import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import { catalog, orders } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { formatDateTime, formatMoney } from '../lib/format'
-import type {
-  EventDetailResponse,
-  OrderResponse,
-  TicketTypeResponse,
-} from '../api/types'
-import { Link } from 'react-router-dom'
+import type { EventDetailResponse, OrderResponse, TicketTypeResponse } from '../api/types'
+
+// Khởi tạo Stripe MỘT LẦN (ngoài component) từ khoá publishable. Thiếu khoá → null (UI báo lỗi cấu hình).
+const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
+const stripePromise: Promise<Stripe | null> | null = PUBLISHABLE_KEY ? loadStripe(PUBLISHABLE_KEY) : null
+
+type Phase = 'form' | 'pay' | 'result'
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -21,7 +25,8 @@ export default function EventDetailPage() {
   const [selected, setSelected] = useState<TicketTypeResponse | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [placing, setPlacing] = useState(false)
-  const [result, setResult] = useState<OrderResponse | null>(null)
+  const [order, setOrder] = useState<OrderResponse | null>(null)
+  const [phase, setPhase] = useState<Phase>('form')
   const [orderError, setOrderError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -32,18 +37,21 @@ export default function EventDetailPage() {
       .catch((e: ApiError) => setError(e.message))
   }, [id])
 
+  function resetOrder() {
+    setOrder(null)
+    setPhase('form')
+    setOrderError(null)
+  }
+
   async function placeOrder() {
     if (!event || !selected) return
     setPlacing(true)
     setOrderError(null)
-    setResult(null)
     try {
-      const order = await orders.place({
-        eventId: event.id,
-        ticketTypeId: selected.id,
-        quantity,
-      })
-      setResult(order)
+      const o = await orders.place({ eventId: event.id, ticketTypeId: selected.id, quantity })
+      setOrder(o)
+      // Đã tạo PaymentIntent → sang bước nhập thẻ; ngược lại (REJECTED / lỗi tạo) → kết quả luôn.
+      setPhase(o.status === 'AWAITING_PAYMENT' && o.clientSecret ? 'pay' : 'result')
     } catch (e) {
       setOrderError(e instanceof ApiError ? e.message : 'Đặt vé thất bại.')
     } finally {
@@ -91,8 +99,7 @@ export default function EventDetailPage() {
               onClick={() => {
                 setSelected(t)
                 setQuantity(1)
-                setResult(null)
-                setOrderError(null)
+                resetOrder()
               }}
             >
               Chọn
@@ -110,8 +117,16 @@ export default function EventDetailPage() {
               Bạn cần <Link to="/login" style={{ color: 'var(--brand)' }}>đăng nhập</Link> để
               đặt vé.
             </p>
-          ) : result ? (
-            <OrderResultView order={result} ticketName={selected.name} />
+          ) : phase === 'pay' && order ? (
+            <PaymentPanel
+              order={order}
+              onResolved={(final) => {
+                setOrder(final)
+                setPhase('result')
+              }}
+            />
+          ) : phase === 'result' && order ? (
+            <OrderResultView order={order} ticketName={selected.name} />
           ) : (
             <>
               <div className="field">
@@ -139,13 +154,105 @@ export default function EventDetailPage() {
                 disabled={placing}
                 onClick={placeOrder}
               >
-                {placing ? 'Đang xử lý thanh toán…' : 'Thanh toán'}
+                {placing ? 'Đang tạo đơn…' : 'Tiếp tục thanh toán'}
               </button>
             </>
           )}
         </div>
       )}
     </>
+  )
+}
+
+/** Poll trạng thái đơn tới khi về trạng thái cuối (webhook chốt). Tối đa ~30s. */
+async function pollOrderUntilFinal(orderId: string): Promise<OrderResponse> {
+  for (let i = 0; i < 20; i++) {
+    const o = await orders.get(orderId)
+    if (o.status === 'PAID' || o.status === 'PAYMENT_FAILED' || o.status === 'REJECTED') return o
+    await new Promise((r) => setTimeout(r, 1500))
+  }
+  return orders.get(orderId) // hết hạn poll: trả trạng thái mới nhất (UI hiện "đang xử lý")
+}
+
+function PaymentPanel({
+  order,
+  onResolved,
+}: {
+  order: OrderResponse
+  onResolved: (final: OrderResponse) => void
+}) {
+  if (!stripePromise || !order.clientSecret) {
+    return (
+      <div className="alert">
+        Thiếu cấu hình Stripe (đặt <code>VITE_STRIPE_PUBLISHABLE_KEY</code> trong <code>.env</code>).
+      </div>
+    )
+  }
+  return (
+    <Elements
+      stripe={stripePromise}
+      options={{ clientSecret: order.clientSecret, appearance: { theme: 'night' } }}
+    >
+      <CheckoutForm order={order} onResolved={onResolved} />
+    </Elements>
+  )
+}
+
+function CheckoutForm({
+  order,
+  onResolved,
+}: {
+  order: OrderResponse
+  onResolved: (final: OrderResponse) => void
+}) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [submitting, setSubmitting] = useState(false)
+  const [waiting, setWaiting] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function pay(e: FormEvent) {
+    e.preventDefault()
+    if (!stripe || !elements) return
+    setSubmitting(true)
+    setErr(null)
+
+    // Xác nhận thẻ. redirect:'if_required' → ở lại trang với thẻ không cần redirect (kể cả 3DS modal).
+    const { error } = await stripe.confirmPayment({
+      elements,
+      confirmParams: { return_url: window.location.href },
+      redirect: 'if_required',
+    })
+
+    if (error) {
+      // Lỗi ngay phía client (thẻ bị từ chối, thiếu thông tin) — đơn vẫn AWAITING_PAYMENT.
+      setErr(error.message ?? 'Thanh toán không thành công.')
+      setSubmitting(false)
+      return
+    }
+
+    // Đã gửi xác nhận → backend chốt qua webhook. Poll tới trạng thái cuối rồi báo cha.
+    setWaiting(true)
+    const final = await pollOrderUntilFinal(order.id)
+    onResolved(final)
+  }
+
+  return (
+    <form onSubmit={pay}>
+      <PaymentElement />
+      {err && <div className="alert" style={{ marginTop: 12 }}>{err}</div>}
+      <button
+        className="btn btn--primary"
+        style={{ width: '100%', marginTop: 16 }}
+        disabled={!stripe || submitting}
+      >
+        {waiting
+          ? '⏳ Đang xác nhận thanh toán…'
+          : submitting
+            ? 'Đang xử lý…'
+            : `Trả ${formatMoney(order.amountMinor, order.currency)}`}
+      </button>
+    </form>
   )
 }
 
@@ -160,6 +267,18 @@ function OrderResultView({ order, ticketName }: { order: OrderResponse; ticketNa
         <Link to="/tickets" className="btn btn--primary" style={{ width: '100%' }}>
           Xem vé của tôi
         </Link>
+      </>
+    )
+  }
+
+  // Đang chờ webhook chốt — KHÔNG phải thất bại.
+  if (order.status === 'AWAITING_PAYMENT' || order.status === 'PENDING') {
+    return (
+      <>
+        <div className="alert">
+          ⏳ Đang xử lý thanh toán… Vé sẽ xuất hiện ở <Link to="/tickets">Vé của tôi</Link> khi hoàn tất.
+        </div>
+        <p className="muted">Mã đơn: {order.id}</p>
       </>
     )
   }

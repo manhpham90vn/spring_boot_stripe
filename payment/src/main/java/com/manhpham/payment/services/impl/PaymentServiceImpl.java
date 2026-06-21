@@ -1,21 +1,27 @@
 package com.manhpham.payment.services.impl;
 
-import com.manhpham.payment.dto.ChargeRequest;
 import com.manhpham.payment.dto.ChargeResponse;
+import com.manhpham.payment.dto.CreateIntentRequest;
+import com.manhpham.payment.dto.IntentResponse;
 import com.manhpham.payment.entities.Payment;
 import com.manhpham.payment.entities.PaymentStatus;
-import com.manhpham.payment.event.PaymentSettledEvent;
-import com.manhpham.payment.event.PaymentSettledOutboxEvent;
 import com.manhpham.payment.gateway.PaymentGateway;
-import com.manhpham.payment.handle.OutboxEventSender;
 import com.manhpham.payment.repositories.jpa.PaymentRepository;
 import com.manhpham.payment.services.PaymentService;
+import com.manhpham.payment.utils.exception.PaymentNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
+/**
+ * Tạo PaymentIntent qua Stripe (KHÔNG thu tiền ngay). Kết quả thật chốt từ WEBHOOK
+ * ({@link com.manhpham.payment.webhook.StripeWebhookService}) — service NÀY không phát
+ * {@code PaymentSettled}. Xem impl/01-payment-real-stripe.md.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -23,16 +29,15 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository payments;
     private final PaymentGateway gateway;
-    private final OutboxEventSender outbox;
 
     @Override
     @Transactional
-    public ChargeResponse charge(ChargeRequest request) {
-        // Idempotency lớp 1: đã có payment cho đơn này → trả kết quả cũ, KHÔNG thu lại.
+    public IntentResponse createIntent(CreateIntentRequest request) {
+        // Idempotency lớp 1: đã có payment cho đơn → trả lại intent cũ (không tạo hai).
         Payment existing = payments.findByOrderId(request.orderId()).orElse(null);
         if (existing != null) {
-            log.info("Charge idempotent hit order={} status={}", request.orderId(), existing.getStatus());
-            return ChargeResponse.from(existing);
+            log.info("createIntent idempotent hit order={} status={}", request.orderId(), existing.getStatus());
+            return IntentResponse.of(existing, retrieveSecret(existing));
         }
 
         Payment payment;
@@ -41,32 +46,38 @@ public class PaymentServiceImpl implements PaymentService {
             payment = payments.saveAndFlush(
                     Payment.create(request.orderId(), request.amountMinor(), request.currency()));
         } catch (DataIntegrityViolationException race) {
-            return ChargeResponse.from(payments.findByOrderId(request.orderId()).orElseThrow());
+            Payment p = payments.findByOrderId(request.orderId()).orElseThrow();
+            return IntentResponse.of(p, retrieveSecret(p));
         }
 
-        // Idempotency key ổn định theo đơn (payment_issue.md 2.17) → cổng không thu hai lần.
-        String idemKey = "order:" + request.orderId() + ":attempt:1";
-        PaymentGateway.ChargeOutcome outcome =
-                gateway.charge(request.orderId(), request.amountMinor(), request.currency(), idemKey);
+        // Idempotency key ổn định theo đơn → Stripe KHÔNG tạo hai PaymentIntent (payment_issue.md 2.17).
+        String idemKey = "order:" + request.orderId();
+        PaymentGateway.IntentResult outcome =
+                gateway.createIntent(request.orderId(), request.amountMinor(), request.currency(), idemKey);
 
-        PaymentStatus status = outcome.status() == PaymentGateway.ChargeOutcome.Status.SUCCEEDED
-                ? PaymentStatus.SUCCEEDED : PaymentStatus.FAILED;
-        payment.settle(status, outcome.reference()); // dirty checking persist
+        if (outcome.status() == PaymentGateway.IntentResult.Status.FAILED) {
+            // Lỗi tạo intent (4xx / hết retry) → FAILED. KHÔNG phát PaymentSettled (sẽ không có webhook);
+            // Order tự bù trừ khi thấy status FAILED ở response.
+            payment.settle(PaymentStatus.FAILED, null);
+            log.warn("createIntent FAILED order={}", request.orderId());
+            return IntentResponse.of(payment, null);
+        }
 
-        // Phát PaymentSettled qua OUTBOX (cùng transaction) → Order/saga tiếp tục qua payment.events.
-        // (Với async Konbini/Furikomi, gateway sẽ trả PROCESSING và sự kiện này phát SAU, từ webhook.)
-        outbox.fire(PaymentSettledOutboxEvent.of(PaymentSettledEvent.of(
-                payment.getOrderId(), payment.getId(), status.name(), outcome.reference())));
-        log.info("Charge order={} amount={} {} -> {}", request.orderId(), request.amountMinor(),
-                request.currency(), status);
-        return ChargeResponse.from(payment);
+        // PROCESSING: lưu PI, chờ webhook chốt. KHÔNG phát PaymentSettled ở đây.
+        payment.startIntent(outcome.paymentIntentId());
+        log.info("PaymentIntent {} order={} -> PROCESSING", outcome.paymentIntentId(), request.orderId());
+        return IntentResponse.of(payment, outcome.clientSecret());
+    }
+
+    private String retrieveSecret(Payment p) {
+        return p.getStripePiId() == null ? null : gateway.retrieveClientSecret(p.getStripePiId());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public ChargeResponse getByOrder(java.util.UUID orderId) {
+    public ChargeResponse getByOrder(UUID orderId) {
         return payments.findByOrderId(orderId)
                 .map(ChargeResponse::from)
-                .orElseThrow(() -> new com.manhpham.payment.utils.exception.PaymentNotFoundException(orderId));
+                .orElseThrow(() -> new PaymentNotFoundException(orderId));
     }
 }

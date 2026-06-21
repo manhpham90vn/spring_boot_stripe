@@ -1,13 +1,13 @@
 # 5. Payment service (`payment/`) — Stripe THẬT, không mock
 
-> Sâu hơn: [`../payment-stripe-flow.md`](../payment-stripe-flow.md) (đa phương thức) · [`../payment_issue.md`](../payment_issue.md) (cạm bẫy) · [`../impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md) (spec code).
+> Sâu hơn: [`payment-stripe-flow.md`](../flows/payment-stripe-flow.md) (đa phương thức) · [`payment_issue.md`](../payment-ref/payment_issue.md) (cạm bẫy) · [`impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md) (spec code).
 
 ## Trách nhiệm
 Cổng **DUY NHẤT** ra Stripe (một tài khoản, **Payment Intents**). Thu tiền **bất
 đồng bộ**: tạo intent → client xác nhận bằng **Payment Element** → **webhook là
 nguồn sự thật** cho succeeded/failed. Sở hữu bản ghi thanh toán, idempotency,
 tham chiếu Stripe. KHÔNG có `MockPaymentGateway`. Chi tiết triển khai:
-[`../impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md).
+[`impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md).
 
 ## Database `payment`
 
@@ -63,7 +63,7 @@ Event xử lý:
   `checkout.session.async_payment_failed`→FAILED · `payment_intent.processing`→PROCESSING.
 
 Body lấy **raw** để verify đúng bytes. Đơn async để `AWAITING_PAYMENT` vài giờ→ngày là
-bình thường (TTL hold theo phương thức — xem [`../inventory-no-oversell.md §3.1`](../inventory-no-oversell.md)).
+bình thường (TTL hold theo phương thức — xem [`inventory-no-oversell.md §3.1`](../flows/inventory-no-oversell.md)).
 
 ## Map PaymentIntent.status → PaymentStatus
 | Stripe | PaymentStatus | Phát settled? |

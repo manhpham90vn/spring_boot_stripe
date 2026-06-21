@@ -32,7 +32,7 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
  * {@code common-security}. Đây là "verify HAI LẦN" (không phải defense-in-depth cổ điển):
  * service verify mới là lớp bảo vệ THẬT (zero-trust, chặn cả khi bị gọi thẳng trong
  * cluster); gateway verify chỉ là tối ưu — fail-fast ở biên + cho phép rate-limit theo user.
- * Xác thực danh tính service (không chỉ user) thì dùng mTLS/mesh (xem docs/deployment-k8s.md §5).
+ * Xác thực danh tính service (không chỉ user) thì dùng mTLS/mesh (xem docs/ops/deployment-k8s.md §5).
  */
 @Configuration
 @EnableWebFluxSecurity

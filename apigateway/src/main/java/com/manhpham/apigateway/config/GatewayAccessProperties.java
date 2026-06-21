@@ -11,7 +11,7 @@ import java.util.List;
  *
  * <p>Cố ý chỉ phân biệt PUBLIC vs cần-token — KHÔNG xét role ở gateway. Luật theo role
  * (vd ADMIN) thuộc về từng service (common-security), để gateway không phải biết chi tiết
- * nghiệp vụ của service và không bị trùng lặp luật. Xem docs/SECURITY-ACCESS-CONTROL.md.
+ * nghiệp vụ của service và không bị trùng lặp luật. Xem docs/standards/SECURITY-ACCESS-CONTROL.md.
  */
 @ConfigurationProperties(prefix = "app.gateway.access")
 public class GatewayAccessProperties {

@@ -3,16 +3,16 @@
 > **Mục đích:** tài liệu căn cứ để code lát cắt thanh toán thật. Đủ chi tiết để
 > implement theo từng file. Bỏ hẳn `MockPaymentGateway`. Tiền chốt qua **webhook**.
 > Liên quan: [`../services/05-payment.md`](../services/05-payment.md),
-> [`payment-stripe-flow.md`](../payment-stripe-flow.md) (đa phương thức + cạm bẫy),
-> [`saga-purchase-flow.md`](../saga-purchase-flow.md).
+> [`payment-stripe-flow.md`](../flows/payment-stripe-flow.md) (đa phương thức + cạm bẫy),
+> [`saga-purchase-flow.md`](../flows/saga-purchase-flow.md).
 
 ## 0. Phạm vi
 - **Trong phạm vi (cùng khung create-intent + webhook):**
   - **Thẻ (card)** qua Payment Element — làm/chạy **trước** để có lát cắt e2e.
   - **Konbini / Furikomi (async)** — DÙNG CHUNG cơ chế, chỉ khác **event xác nhận**
     (`checkout.session.async_payment_*`) và **TTL hold dài** (xem
-    [`inventory-no-oversell.md §3.1`](../inventory-no-oversell.md),
-    [`saga-purchase-flow.md §2.1`](../saga-purchase-flow.md)). Đã gộp vào §3.3/§4.
+    [`inventory-no-oversell.md §3.1`](../flows/inventory-no-oversell.md),
+    [`saga-purchase-flow.md §2.1`](../flows/saga-purchase-flow.md)). Đã gộp vào §3.3/§4.
 - **NGOÀI phần này (part sau):** refund/hoàn tiền (bù trừ saga), ghế ngồi, 3DS UX
   nâng cao. (3DS `requires_action` vẫn chạy đúng vì đã chờ webhook.)
 
@@ -195,4 +195,4 @@ stripe.webhook-secret=${STRIPE_WEBHOOK_SECRET:whsec_...}
       reconcile về trạng thái cuối (không mất tiền/không kẹt vĩnh viễn).
 - [ ] Gửi lại cùng webhook event → không phát vé/đổi trạng thái lần hai.
 - [ ] FE: lúc chờ hiện "Đang xử lý", chỉ báo "thất bại" khi `PAYMENT_FAILED` thật.
-- [ ] `smoke-test.sh` vẫn xanh (các assertion biên/security không phụ thuộc mock).
+- [ ] `scripts/test.http` PHẦN 1 (smoke biên/security) vẫn xanh — không phụ thuộc mock.

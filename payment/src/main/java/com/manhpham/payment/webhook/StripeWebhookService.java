@@ -33,9 +33,9 @@ import java.util.UUID;
  *       commit nguyên tử.</li>
  * </ol>
  *
- * <p>LƯU Ý (walking skeleton): ở đây chỉ cập nhật bản ghi PAYMENT. Bước async ĐẦY ĐỦ là
- * đẩy một event lên Kafka để <b>Order/saga tiếp tục</b> (commit Inventory + Order PAID +
- * phát vé) — xem saga-purchase-flow.md §2.1. Đó là phần "đắp thịt" tiếp theo.
+ * <p>Cập nhật bản ghi PAYMENT + phát {@code PaymentSettled} qua OUTBOX (cùng transaction) →
+ * Kafka {@code payment.events} để <b>Order/saga tiếp tục</b> (commit Inventory + Order PAID +
+ * phát vé) — xem flows/saga-purchase-flow.md §2.1.
  */
 @Service
 @Slf4j
@@ -70,8 +70,9 @@ public class StripeWebhookService {
         switch (event.getType()) {
             case "payment_intent.succeeded" -> applyStatus(event, PaymentStatus.SUCCEEDED);
             case "payment_intent.payment_failed" -> applyStatus(event, PaymentStatus.FAILED);
-            // Các event khác (canceled, processing, dispute...) sẽ bổ sung khi cần — xem
-            // payment-issue-resolutions.md (2.12, 5.x). Hiện chỉ xử lý hai nhánh chính.
+            case "payment_intent.canceled" -> applyStatus(event, PaymentStatus.CANCELED);
+            // Async Konbini/Furikomi (checkout.session.async_payment_*) cần thêm bước tạo Checkout
+            // Session — bổ sung ở increment sau (xem impl/01-payment-real-stripe.md §0).
             default -> log.debug("Webhook bỏ qua loại {}", event.getType());
         }
 

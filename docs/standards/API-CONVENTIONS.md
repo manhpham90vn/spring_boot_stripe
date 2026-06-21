@@ -3,7 +3,7 @@
 > **Mục đích:** một quy ước DUY NHẤT cho đường dẫn, để nhìn path là biết ngay route đó
 > dành cho ai và đi qua đâu — tránh nhầm public với nội bộ. Bám sát code đang chạy
 > (gateway routes, controller, `common-security`, nginx). Liên quan:
-> [`SECURITY-ACCESS-CONTROL.md`](./SECURITY-ACCESS-CONTROL.md), [`/CLAUDE.md`](../CLAUDE.md).
+> [`SECURITY-ACCESS-CONTROL.md`](SECURITY-ACCESS-CONTROL.md), [`/CLAUDE.md`](../../CLAUDE.md).
 
 ---
 
@@ -129,7 +129,7 @@ Checklist khi viết API nội bộ:
       mạng đã rào).
 - [ ] Gọi nhau qua DNS nội bộ `http://<service>:<port>/internal/…`.
 
-> Chi tiết cơ chế & sơ đồ luồng: [`SECURITY-ACCESS-CONTROL.md` §4](./SECURITY-ACCESS-CONTROL.md).
+> Chi tiết cơ chế & sơ đồ luồng: [`SECURITY-ACCESS-CONTROL.md` §4](SECURITY-ACCESS-CONTROL.md).
 
 ---
 
@@ -150,6 +150,6 @@ Checklist khi viết API nội bộ:
 1. Path nghiệp vụ: `/api/<service>/…` (tiền tố = tên service). Admin: `…/admin/…`.
 2. Khai route ở gateway: `Path=/api/<service>/**`, route id = `<service>`.
 3. Khai luật phân quyền bằng properties (xem
-   [`SECURITY-ACCESS-CONTROL.md` §3](./SECURITY-ACCESS-CONTROL.md)) — không viết SecurityConfig.
+   [`SECURITY-ACCESS-CONTROL.md` §3](SECURITY-ACCESS-CONTROL.md)) — không viết SecurityConfig.
 4. Cần gọi nội bộ? → `/internal/…` + NetworkPolicy. **Không** route ra gateway.
 5. nginx không phải sửa cho từng service: `/api/` là catch-all → gateway.

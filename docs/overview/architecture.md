@@ -3,8 +3,8 @@
 > **Mục đích của tài liệu:** làm **căn cứ chuẩn** để triển khai các service còn lại.
 > Mọi quy ước ở đây đã được hiện thực hoá trong service `auth/` (service mẫu) — khi
 > làm service mới, **copy khuôn từ `auth`** rồi điều chỉnh theo trách nhiệm riêng.
-> Ràng buộc gốc nằm ở [`/CLAUDE.md`](../CLAUDE.md); các cạm bẫy thanh toán ở
-> [`docs/payment_issue.md`](./payment_issue.md).
+> Ràng buộc gốc nằm ở [`/CLAUDE.md`](../../CLAUDE.md); các cạm bẫy thanh toán ở
+> [`docs/payment_issue.md`](../payment-ref/payment_issue.md).
 
 ---
 
@@ -185,7 +185,7 @@ Connector: `infra/debezium/<svc>-outbox-connector.json` (compose) và
 `<svc>/deploy/debezium/<svc>-outbox-connector.yaml` (Strimzi/K8s).
 
 > 📖 **Chi tiết đầy đủ + quy ước mở rộng** (thêm event/producer/consumer mới, cạm bẫy,
-> lệnh debug): [`outbox-debezium.md`](./outbox-debezium.md).
+> lệnh debug): [`outbox-debezium.md`](../standards/outbox-debezium.md).
 
 **Bên NHẬN (consumer) — dùng Spring Cloud Stream functional binder:**
 
@@ -312,8 +312,8 @@ management.otlp.tracing.endpoint=${OTLP_TRACING_ENDPOINT:http://localhost:4318/v
 
 ## 14. Tham chiếu
 
-- [`/CLAUDE.md`](../CLAUDE.md) — ràng buộc gốc, danh sách service, thứ tự triển khai.
-- [`docs/payment_issue.md`](./payment_issue.md) — cạm bẫy thanh toán Stripe (oversell,
+- [`/CLAUDE.md`](../../CLAUDE.md) — ràng buộc gốc, danh sách service, thứ tự triển khai.
+- [`docs/payment_issue.md`](../payment-ref/payment_issue.md) — cạm bẫy thanh toán Stripe (oversell,
   idempotency, webhook, retry, đối soát, đặc thù JPY/Konbini).
 - Service mẫu: **`auth/`** — khuôn cho package layout, outbox/CDC, security, lỗi, Lombok.
 - `docker-compose.yml` — port, DB, Kafka/Debezium, profiles (`cdc`, `mail`, `full`…).

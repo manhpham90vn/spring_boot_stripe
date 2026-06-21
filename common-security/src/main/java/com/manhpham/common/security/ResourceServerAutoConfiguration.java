@@ -55,7 +55,7 @@ public class ResourceServerAutoConfiguration {
      * Quy ước API NỘI BỘ (service↔service). Để permitAll ở tầng app vì lời gọi nội bộ
      * không mang JWT người dùng; rào chắn THẬT là ở tầng mạng — gateway KHÔNG khai route
      * cho {@code /internal/**} (không với tới từ ngoài) + K8s NetworkPolicy chỉ cho
-     * service trong cluster gọi nhau. Xem docs/SECURITY-ACCESS-CONTROL.md.
+     * service trong cluster gọi nhau. Xem docs/standards/SECURITY-ACCESS-CONTROL.md.
      */
     private static final String INTERNAL_PREFIX = "/internal/**";
 

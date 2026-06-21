@@ -1,8 +1,8 @@
 # Waiting Room — van chặn spike (design)
 
 > **Trạng thái:** THIẾT KẾ. Store chính: **Redis**. Ràng buộc gốc:
-> [`/CLAUDE.md`](../CLAUDE.md). Liên quan: [`resilience-flash-sale.md`](./resilience-flash-sale.md),
-> [`inventory-no-oversell.md`](./inventory-no-oversell.md), [`services/08-waitingroom.md`](./services/08-waitingroom.md).
+> [`/CLAUDE.md`](../../CLAUDE.md). Liên quan: [`resilience-flash-sale.md`](../standards/resilience-flash-sale.md),
+> [`inventory-no-oversell.md`](inventory-no-oversell.md), [`services/08-waitingroom.md`](../services/08-waitingroom.md).
 
 ---
 
@@ -31,9 +31,9 @@ sập hệ thống.
 ## 3. Admission rate phải BIẾT tồn kho + ngưỡng Stripe
 Đây là điểm mấu chốt: **không thả nhiều hơn số vé còn lại** và **không vượt ~100–200 req/s
 của Stripe**.
-- Lấy **tồn kho còn lại** từ Inventory (xem [`inventory-no-oversell.md`](./inventory-no-oversell.md))
+- Lấy **tồn kho còn lại** từ Inventory (xem [`inventory-no-oversell.md`](inventory-no-oversell.md))
   → nếu gần hết, giảm/ngừng thả.
-- Giới hạn nhịp thả ≤ năng lực Payment/Stripe ([`payment-stripe-flow.md`](./payment-stripe-flow.md)).
+- Giới hạn nhịp thả ≤ năng lực Payment/Stripe ([`payment-stripe-flow.md`](payment-stripe-flow.md)).
 - Khi hết vé: ngừng thả, báo sold-out cho phần còn lại trong hàng (đỡ tải vô ích).
 
 ## 4. Chống bot
@@ -43,7 +43,7 @@ loạt — quan trọng vì chỗ trong hàng = cơ hội mua.
 ## 5. Quy ước & ranh giới
 - API client: `/api/waitingroom/**` (qua gateway). Vd: xin vào hàng, poll vị trí, đổi PASS.
 - Store chính **Redis** (sorted set + token); **không cần PostgreSQL** riêng (trạng thái
-  hàng đợi là tạm thời) — xem [`API-CONVENTIONS.md`](./API-CONVENTIONS.md) / cấu hình
+  hàng đợi là tạm thời) — xem [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md) / cấu hình
   `waitingroom/application.properties`.
 - Waiting Room đứng **trước** luồng mua; chỉ gác cổng, không giữ logic tồn kho/tiền.
 

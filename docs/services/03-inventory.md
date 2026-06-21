@@ -1,6 +1,6 @@
 # 3. Inventory service (`inventory/`)
 
-> Sâu hơn: [`../inventory-no-oversell.md`](../inventory-no-oversell.md) — atomic Redis, reconciliation, TTL hold theo phương thức.
+> Sâu hơn: [`inventory-no-oversell.md`](../flows/inventory-no-oversell.md) — atomic Redis, reconciliation, TTL hold theo phương thức.
 
 ## Trách nhiệm
 Trả lời "**còn bao nhiêu, ghế nào trống**". **Service tranh chấp cao nhất.**

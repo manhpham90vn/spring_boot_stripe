@@ -22,7 +22,7 @@ import java.util.UUID;
 
 /**
  * Endpoint của Auth, đặt dưới tiền tố {@code /api/auth}. Theo quy ước path (xem
- * docs/API-CONVENTIONS.md), DẤU HIỆU public/cần-token nằm NGAY TRÊN path:
+ * docs/standards/API-CONVENTIONS.md), DẤU HIỆU public/cần-token nằm NGAY TRÊN path:
  * <ul>
  *   <li>{@code /api/auth/public/**} — CÔNG KHAI (register, login): chưa đăng nhập thì
  *       lấy đâu ra token, nên mở.</li>

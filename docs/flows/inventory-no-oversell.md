@@ -2,8 +2,8 @@
 
 > **Trạng thái:** THIẾT KẾ. Bài toán đúng-sai KHÓ NHẤT của hệ thống: chục nghìn người
 > tranh tồn hữu hạn cùng lúc, **tuyệt đối không bán trùng**. Ràng buộc gốc:
-> [`/CLAUDE.md`](../CLAUDE.md). Liên quan: [`saga-purchase-flow.md`](./saga-purchase-flow.md),
-> [`services/03-inventory.md`](./services/03-inventory.md).
+> [`/CLAUDE.md`](../../CLAUDE.md). Liên quan: [`saga-purchase-flow.md`](saga-purchase-flow.md),
+> [`services/03-inventory.md`](../services/03-inventory.md).
 
 ---
 
@@ -68,13 +68,13 @@ ra (KHÔNG oversell), nhưng **tồn hữu hiệu giảm** trong lúc chờ ("kh
 > dựa **đúng hạn theo phương thức**, KHÔNG quét nhầm đơn Konbini đang chờ (payment_issue.md 7.1).
 
 ## 4. API nội bộ (chỉ Order gọi)
-Theo [`API-CONVENTIONS.md`](./API-CONVENTIONS.md), đặt dưới `/internal/**`:
+Theo [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md), đặt dưới `/internal/**`:
 ```
 POST   /internal/holds            { ticketTypeId|seatIds, qty, orderId }  → { holdId }
 POST   /internal/holds/{id}/commit                                        → SOLD (ghi Postgres)
 DELETE /internal/holds/{id}                                               → nhả chỗ (bù trừ)
 ```
-Không expose ra `/api`; rào bằng NetworkPolicy ([`deployment-k8s.md`](./deployment-k8s.md)).
+Không expose ra `/api`; rào bằng NetworkPolicy ([`deployment-k8s.md`](../ops/deployment-k8s.md)).
 
 ## 5. Idempotency (bắt buộc)
 - HOLD theo `orderId`: gọi lại trả **cùng holdId**, không trừ tồn lần hai.
@@ -101,11 +101,11 @@ Không expose ra `/api`; rào bằng NetworkPolicy ([`deployment-k8s.md`](./depl
    xử lý: COMMIT kiểm hold còn hợp lệ; nếu đã nhả thì saga thất bại có kiểm soát (không SOLD).
 3. **Redis mất dữ liệu** = mất trạng thái hold → phải HA + reconciliation từ Postgres.
 4. **Đừng tin client gửi số tồn**; mọi quyết định tồn kho ở server (Redis), giá/loại vé ở
-   Catalog (xem [`architecture.md`](./architecture.md)).
-5. Waiting Room ([`waiting-room.md`](./waiting-room.md)) **admission rate phải biết tồn còn
+   Catalog (xem [`architecture.md`](../overview/architecture.md)).
+5. Waiting Room ([`waiting-room.md`](waiting-room.md)) **admission rate phải biết tồn còn
    lại** để không thả người vào nhiều hơn vé.
 
 ## 9. Phạm vi triển khai
 **Cả hai loại tồn trong phạm vi:** GA (counter Redis `DECRBY`) và **ghế ngồi** (seat hold
 `SET NX` + TTL). Lát cắt thẻ + GA chạy trước cho tiền end-to-end; ghế ngồi dùng chung
-khung HOLD/COMMIT/RELEASE (xem [`services/03-inventory.md`](./services/03-inventory.md)).
+khung HOLD/COMMIT/RELEASE (xem [`services/03-inventory.md`](../services/03-inventory.md)).

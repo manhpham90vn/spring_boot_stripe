@@ -10,7 +10,7 @@ import java.util.UUID;
 public record PaymentSettledEvent(
         UUID orderId,
         UUID paymentId,
-        String status,   // "SUCCEEDED" | "FAILED"
+        String status,   // "SUCCEEDED" | "FAILED" | "CANCELED" (chỉ SUCCEEDED là thành công)
         String reference,
         Instant occurredAt) {
 

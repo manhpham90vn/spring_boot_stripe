@@ -1,6 +1,6 @@
 # 8. Waiting Room service (`waitingroom/`)
 
-> Sâu hơn: [`../waiting-room.md`](../waiting-room.md) — cơ chế sorted set, admission theo tồn kho, chống bot.
+> Sâu hơn: [`waiting-room.md`](../flows/waiting-room.md) — cơ chế sorted set, admission theo tồn kho, chống bot.
 
 ## Trách nhiệm
 **Van bảo vệ trước spike** flash sale. Xếp người vào hàng đợi, thả vào (admission)

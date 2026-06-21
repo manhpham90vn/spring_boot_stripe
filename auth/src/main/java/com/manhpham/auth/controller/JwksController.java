@@ -15,7 +15,7 @@ import java.util.Map;
  * hỏi Auth từng request. Chỉ lộ public key (an toàn để công khai), private key dùng
  * để ký không bao giờ ra khỏi Auth.
  *
- * <p>ĐẶT DƯỚI {@code /internal/} theo quy ước path (docs/API-CONVENTIONS.md): endpoint này
+ * <p>ĐẶT DƯỚI {@code /internal/} theo quy ước path (docs/standards/API-CONVENTIONS.md): endpoint này
  * CHỈ service↔service gọi (không client/trình duyệt nào cần), nên không thuộc {@code /api}.
  * Nhờ vậy nó tự được {@code permitAll} qua luật {@code /internal/**}, gateway không route
  * ra ngoài, và sẽ được NetworkPolicy bảo vệ ở prod.

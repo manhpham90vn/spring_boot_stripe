@@ -2,7 +2,7 @@
 
 > **Mục đích:** từ 0 dựng được toàn bộ hệ thống trên máy (docker-compose), biết cổng/công
 > cụ, chạy smoke-test, và debug các sự cố thường gặp. Bám sát `docker-compose.yml` thật.
-> Ràng buộc kiến trúc: [`/CLAUDE.md`](../CLAUDE.md); tổng quan: [`architecture.md`](./architecture.md).
+> Ràng buộc kiến trúc: [`/CLAUDE.md`](../../CLAUDE.md); tổng quan: [`architecture.md`](architecture.md).
 
 ---
 
@@ -27,7 +27,7 @@ docker compose logs -f auth   # theo dõi log một service
    (`infra/postgres/init/01-create-databases.sql`).
 4. `minio-init` — tạo bucket `event-images`, `ticket-qr`.
 5. `connect-init` — đăng ký **mọi** connector Debezium trong `infra/debezium/*.json`
-   (xem [`outbox-debezium.md`](./outbox-debezium.md)).
+   (xem [`outbox-debezium.md`](../standards/outbox-debezium.md)).
 
 > **Postgres bật logical replication** (`wal_level=logical`, slots) cho Debezium — đã cấu
 > hình sẵn trong lệnh của service `postgres`.
@@ -52,13 +52,14 @@ docker compose logs -f auth   # theo dõi log một service
 | Kafka | :9092 | |
 
 ## 4. Kiểm tra "có gãy gì không"
+Mở `scripts/test.http` trong IDE (JetBrains HTTP Client) → "Run all requests in file",
+hoặc chạy CLI:
 ```bash
-./scripts/smoke-test.sh                          # 33 check qua edge nginx
-# Có admin (xem §5): chạy thêm happy-path catalog (42 check)
-ADMIN_EMAIL=a@x.com ADMIN_PASSWORD=Admin1234! ./scripts/smoke-test.sh
+ijhttp scripts/test.http
 ```
-Script kiểm: health 9 service, luồng auth, ma trận public/admin/internal, routing 404.
-Exit 0 = pass tất cả. Chi tiết: header trong `scripts/smoke-test.sh`.
+- **PHẦN 1 (smoke):** health 9 service + ma trận public/admin/internal + routing 404.
+- **PHẦN 2 (mua vé):** saga + edge tiền/vé — cần ADMIN (xem §5); happy-path cần
+  `STRIPE_API_KEY` thật ở payment (dummy → đơn `PAYMENT_FAILED`).
 
 ## 5. Tạo tài khoản ADMIN (seed)
 Đăng ký luôn ra role USER. Thăng quyền qua DB:
@@ -93,10 +94,10 @@ curl -s http://localhost/api/catalog/public/events
 | Triệu chứng | Soi ở đâu |
 |-------------|-----------|
 | Service không UP | `docker compose logs <svc>`; nhớ first-boot ~120s |
-| Đăng ký xong **không thấy mail** | Debezium connector FAILED → `curl -s localhost:8085/connectors/auth-outbox-connector/status \| jq` (xem [`outbox-debezium.md §9`](./outbox-debezium.md)) |
+| Đăng ký xong **không thấy mail** | Debezium connector FAILED → `curl -s localhost:8085/connectors/auth-outbox-connector/status \| jq` (xem [`outbox-debezium.md §9`](../standards/outbox-debezium.md)) |
 | Event không tới consumer | `docker exec ticketing-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`; log notification |
 | Outbox tồn đọng | `docker exec ticketing-postgres psql -U app -d auth -c "SELECT count(*) FROM outbox;"` |
-| 401/403 bất ngờ | đối chiếu [`SECURITY-ACCESS-CONTROL.md`](./SECURITY-ACCESS-CONTROL.md) + [`API-CONVENTIONS.md`](./API-CONVENTIONS.md) |
+| 401/403 bất ngờ | đối chiếu [`SECURITY-ACCESS-CONTROL.md`](../standards/SECURITY-ACCESS-CONTROL.md) + [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md) |
 | Cần verify JWT thủ công | JWKS chỉ nội bộ: `curl -s http://localhost:8081/internal/jwks` |
 
 ## 8. Dọn dẹp
@@ -108,6 +109,6 @@ docker compose down -v         # xoá sạch cả volume (reset hoàn toàn)
 > connector; outbox bắt đầu lại từ rỗng (`snapshot.mode=never`).
 
 ## 9. Liên quan
-- [`outbox-debezium.md`](./outbox-debezium.md) — luồng event async & debug connector.
-- [`SECURITY-ACCESS-CONTROL.md`](./SECURITY-ACCESS-CONTROL.md) · [`API-CONVENTIONS.md`](./API-CONVENTIONS.md) — vì sao 401/403, path nào public.
-- `scripts/smoke-test.sh` — kiểm tra sau deploy.
+- [`outbox-debezium.md`](../standards/outbox-debezium.md) — luồng event async & debug connector.
+- [`SECURITY-ACCESS-CONTROL.md`](../standards/SECURITY-ACCESS-CONTROL.md) · [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md) — vì sao 401/403, path nào public.
+- `scripts/test.http` — test API (smoke bảo mật + luồng mua vé) cho IDE/`ijhttp`.

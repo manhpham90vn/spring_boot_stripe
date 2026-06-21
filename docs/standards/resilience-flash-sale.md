@@ -2,8 +2,8 @@
 
 > **Mục đích:** gom các cơ chế chịu lỗi/chịu tải nằm rải ở gateway, payment, waiting room
 > thành một bức tranh. Một phần đã chạy (gateway), phần còn lại là định hướng. Ràng buộc
-> gốc: [`/CLAUDE.md`](../CLAUDE.md). Liên quan: [`inventory-no-oversell.md`](./inventory-no-oversell.md),
-> [`payment-stripe-flow.md`](./payment-stripe-flow.md), [`waiting-room.md`](./waiting-room.md).
+> gốc: [`/CLAUDE.md`](../../CLAUDE.md). Liên quan: [`inventory-no-oversell.md`](../flows/inventory-no-oversell.md),
+> [`payment-stripe-flow.md`](../flows/payment-stripe-flow.md), [`waiting-room.md`](../flows/waiting-room.md).
 
 ---
 
@@ -45,12 +45,12 @@ Stripe ~100–200 req/s/tài khoản, vượt = 429. Payment **bắt buộc**:
 - **Rate limiter** cục bộ để KHÔNG vượt ngưỡng.
 - **Retry exponential backoff** (Resilience4j) xử lý 429 sạch — backoff + jitter, có trần
   số lần; **không retry dồn dập** (làm ngưỡng tệ hơn).
-Chi tiết: [`payment-stripe-flow.md`](./payment-stripe-flow.md) §3.
+Chi tiết: [`payment-stripe-flow.md`](../flows/payment-stripe-flow.md) §3.
 
 ## 5. Lớp 1 — Waiting Room
 Van chặn trước spike: hàng đợi Redis sorted set, thả người theo nhịp mà Inventory + Stripe
 chịu được, kèm CAPTCHA chống bot. **Admission rate phải biết tồn kho còn lại** (đừng thả
-nhiều hơn vé). Thiết kế: [`waiting-room.md`](./waiting-room.md).
+nhiều hơn vé). Thiết kế: [`waiting-room.md`](../flows/waiting-room.md).
 
 ## 6. Lớp 3 — trong service (định hướng)
 - **Timeout** mọi lời gọi ra ngoài (đừng chờ vô hạn → cạn thread/kết nối).

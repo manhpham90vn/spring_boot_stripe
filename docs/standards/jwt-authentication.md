@@ -2,7 +2,7 @@
 
 > **Mục đích:** giải thích cơ chế xác thực của hệ thống và **bám sát code đang
 > chạy** trong `auth/`, `apigateway/`, `common-security/`. Ràng buộc gốc ở
-> [`/CLAUDE.md`](../CLAUDE.md); kiến trúc tổng quan ở [`architecture.md`](./architecture.md).
+> [`/CLAUDE.md`](../../CLAUDE.md); kiến trúc tổng quan ở [`architecture.md`](../overview/architecture.md).
 >
 > **TL;DR triển khai hiện tại:** Auth ký token bằng **RS256 (bất đối xứng)**, công
 > bố public key qua **JWKS** (`/internal/jwks`). Gateway và mọi service **verify cục
@@ -192,7 +192,7 @@ lần nữa — **không tin header do bên ngoài gắn vào**, danh tính luô
 > phép kiểm (cùng JWKS/issuer). **Service verify mới là lớp bảo vệ THẬT** (zero-trust, chặn
 > cả lời gọi thẳng trong cluster); **gateway verify chỉ là tối ưu** (fail-fast ở biên +
 > cho phép rate-limit theo user). Muốn xác thực *danh tính service* (không chỉ user) thì
-> dùng mTLS/mesh — xem [`deployment-k8s.md §5`](./deployment-k8s.md), [`SECURITY-ACCESS-CONTROL.md`](./SECURITY-ACCESS-CONTROL.md).
+> dùng mTLS/mesh — xem [`deployment-k8s.md §5`](../ops/deployment-k8s.md), [`SECURITY-ACCESS-CONTROL.md`](SECURITY-ACCESS-CONTROL.md).
 
 ```
                  ┌─────── login (POST /api/auth/public/login) ───────┐

@@ -1,10 +1,10 @@
 # Payment — tích hợp Stripe (design)
 
 > **Trạng thái:** THIẾT KẾ (đa phương thức + cạm bẫy). Spec triển khai card từng file ở
-> [`impl/01-payment-real-stripe.md`](./impl/01-payment-real-stripe.md); thiết kế chốt ở
-> [`services/05-payment.md`](./services/05-payment.md); cạm bẫy chi tiết ở
-> [`payment_issue.md`](./payment_issue.md). Ràng buộc gốc: [`/CLAUDE.md`](../CLAUDE.md).
-> Liên quan: [`saga-purchase-flow.md`](./saga-purchase-flow.md), [`resilience-flash-sale.md`](./resilience-flash-sale.md).
+> [`impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md); thiết kế chốt ở
+> [`services/05-payment.md`](../services/05-payment.md); cạm bẫy chi tiết ở
+> [`payment_issue.md`](../payment-ref/payment_issue.md). Ràng buộc gốc: [`/CLAUDE.md`](../../CLAUDE.md).
+> Liên quan: [`saga-purchase-flow.md`](saga-purchase-flow.md), [`resilience-flash-sale.md`](../standards/resilience-flash-sale.md).
 
 ---
 
@@ -34,7 +34,7 @@ hữu: bản ghi thanh toán, idempotency key, tham chiếu Stripe. **KHÔNG** c
 ## 3. Giới hạn Stripe phải tôn trọng
 - ~**100–200 request/giây mỗi tài khoản**; vượt = HTTP **429**.
 - Payment **bắt buộc** có **rate limiter** (không vượt ngưỡng) + **retry exponential backoff**
-  (Resilience4j) để xử lý 429 sạch sẽ. Xem [`resilience-flash-sale.md`](./resilience-flash-sale.md).
+  (Resilience4j) để xử lý 429 sạch sẽ. Xem [`resilience-flash-sale.md`](../standards/resilience-flash-sale.md).
 - Đây cũng là lý do **Waiting Room** giới hạn nhịp vào — admission phải biết cả ngưỡng Stripe.
 
 ## 4. Idempotency (bắt buộc, nhiều tầng)
@@ -50,8 +50,8 @@ hữu: bản ghi thanh toán, idempotency key, tham chiếu Stripe. **KHÔNG** c
 3. **Đẩy vào Kafka rồi MỚI xử lý** (không xử lý nặng ngay trong request webhook) → trả 200
    nhanh cho Stripe, xử lý async, chịu lỗi tốt.
 4. Endpoint đặt ở `/webhooks/stripe`, vào qua **reverse proxy DMZ** (nginx dev / Ingress
-   prod), **bỏ qua apigateway** (xem [`API-CONVENTIONS.md`](./API-CONVENTIONS.md) §5 và
-   [`deployment-k8s.md`](./deployment-k8s.md)).
+   prod), **bỏ qua apigateway** (xem [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md) §5 và
+   [`deployment-k8s.md`](../ops/deployment-k8s.md)).
 
 ## 6. Trạng thái PaymentIntent (rút gọn)
 ```

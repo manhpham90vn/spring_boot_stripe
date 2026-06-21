@@ -2,9 +2,9 @@
 
 > **Mục đích:** mô tả cách hệ thống lên K8s thuần tự quản (on-prem), và cung cấp **manifest
 > mẫu** cho các POLICY thuộc về ứng dụng (Ingress, NetworkPolicy) — phần mà repo nên giữ dù
-> hạ tầng nền (Operator/Helm) là Phase 0 ngoài repo. Ràng buộc gốc: [`/CLAUDE.md`](../CLAUDE.md).
-> Liên quan: [`SECURITY-ACCESS-CONTROL.md`](./SECURITY-ACCESS-CONTROL.md),
-> [`API-CONVENTIONS.md`](./API-CONVENTIONS.md), [`payment-stripe-flow.md`](./payment-stripe-flow.md).
+> hạ tầng nền (Operator/Helm) là Phase 0 ngoài repo. Ràng buộc gốc: [`/CLAUDE.md`](../../CLAUDE.md).
+> Liên quan: [`SECURITY-ACCESS-CONTROL.md`](../standards/SECURITY-ACCESS-CONTROL.md),
+> [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md), [`payment-stripe-flow.md`](../flows/payment-stripe-flow.md).
 
 ---
 
@@ -61,7 +61,7 @@ spec:
 ## 4. NetworkPolicy — rào THẬT cho `/internal/**`
 
 Quy ước `/internal/**` (service↔service) chỉ an toàn ở prod khi có **NetworkPolicy** chặn
-mọi nguồn ngoài cluster/không-được-phép (xem [`SECURITY-ACCESS-CONTROL.md`](./SECURITY-ACCESS-CONTROL.md) §4).
+mọi nguồn ngoài cluster/không-được-phép (xem [`SECURITY-ACCESS-CONTROL.md`](../standards/SECURITY-ACCESS-CONTROL.md) §4).
 Mô hình: **default-deny ingress** rồi **mở có chọn lọc**.
 
 **(a) Mặc định chặn hết traffic vào mọi pod:**
@@ -132,7 +132,7 @@ spec:
 Istio/Linkerd dựa vào **sidecar injection + control plane của K8s** → **docker-compose KHÔNG
 chạy mesh đúng nghĩa**. Muốn thử trước khi lên prod: dựng **K8s local nhẹ** (k3d/kind/minikube)
 — `k3d` (k3s-in-docker) gần nhất với "K8s thuần on-prem" của dự án — rồi cài mesh để validate
-manifest. Compose vẫn dùng cho vòng lặp code nhanh (xem [`dev-runbook.md`](./dev-runbook.md)).
+manifest. Compose vẫn dùng cho vòng lặp code nhanh (xem [`dev-runbook.md`](../overview/dev-runbook.md)).
 
 ### 5.3 Linkerd vs Istio
 | | **Linkerd** | **Istio** |
@@ -143,7 +143,7 @@ manifest. Compose vẫn dùng cho vòng lặp code nhanh (xem [`dev-runbook.md`]
 | Hợp khi | chỉ cần **mTLS + identity** in-cluster | muốn **đẩy verify JWT xuống mesh** (hướng B) |
 
 ### 5.4 Quan hệ với "hai tầng verify JWT"
-(Xem [`SECURITY-ACCESS-CONTROL.md`](./SECURITY-ACCESS-CONTROL.md) — verify JWT ở gateway + service.)
+(Xem [`SECURITY-ACCESS-CONTROL.md`](../standards/SECURITY-ACCESS-CONTROL.md) — verify JWT ở gateway + service.)
 
 - **Hướng A (mặc định, khuyên dùng):** giữ **JWT verify ở app (zero-trust)** + thêm
   **Linkerd mTLS** cho identity/mã hoá service↔service. Mạnh nhất, ít coupling, không phải
@@ -169,11 +169,11 @@ manifest. Compose vẫn dùng cho vòng lặp code nhanh (xem [`dev-runbook.md`]
 ## 7. Debezium trên K8s (Strimzi)
 Mỗi service producer ship một **`KafkaConnector` CRD** (`<svc>/deploy/debezium/<svc>-outbox-connector.yaml`);
 Strimzi operator reconcile. Khác dev (compose `connect-init` POST REST). Quy ước slot/
-publication/topic.prefix: xem [`outbox-debezium.md`](./outbox-debezium.md) §7.3.
+publication/topic.prefix: xem [`outbox-debezium.md`](../standards/outbox-debezium.md) §7.3.
 
 ## 8. Lưu ý vận hành
 - **TLS** ở Ingress (đặc biệt webhook Stripe).
 - **Không autoscale** → đặt resource requests/limits sát sizing; dựa Waiting Room + rate
-  limit để chịu spike ([`resilience-flash-sale.md`](./resilience-flash-sale.md)).
+  limit để chịu spike ([`resilience-flash-sale.md`](../standards/resilience-flash-sale.md)).
 - **Probe**: liveness/readiness trỏ `/actuator/health/**` (đã expose, permitAll).
 - **Giám sát replication slot** (WAL phình nếu connector chết) + trạng thái connector.

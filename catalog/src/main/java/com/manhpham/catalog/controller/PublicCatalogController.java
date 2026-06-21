@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Duyệt danh mục — CÔNG KHAI (không cần JWT). Theo quy ước path (docs/API-CONVENTIONS.md),
+ * Duyệt danh mục — CÔNG KHAI (không cần JWT). Theo quy ước path (docs/standards/API-CONVENTIONS.md),
  * mọi route công khai nằm dưới nhánh {@code /api/catalog/public/**} → nhìn path là biết
  * không cần token, không phải đoán theo HTTP method. Đọc nhiều ghi ít → cache Redis ở tầng service.
  */

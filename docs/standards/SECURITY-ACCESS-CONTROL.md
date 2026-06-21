@@ -2,8 +2,8 @@
 
 > **Mục đích:** giải thích MÔ HÌNH kiểm soát truy cập của hệ thống và **bám sát code
 > đang chạy** sau đợt gom luật về một nguồn. Chi tiết cơ chế xác thực JWT (ký RS256,
-> JWKS, verify) nằm ở [`jwt-authentication.md`](./jwt-authentication.md); ràng buộc gốc
-> ở [`/CLAUDE.md`](../CLAUDE.md).
+> JWKS, verify) nằm ở [`jwt-authentication.md`](jwt-authentication.md); ràng buộc gốc
+> ở [`/CLAUDE.md`](../../CLAUDE.md).
 >
 > **TL;DR:** Tách rõ 3 việc. **Authentication** (token có thật không) — cơ chế dùng chung
 > ở `common-security` + gateway. **Authorization** (ai được vào route nào) — khai báo bằng
@@ -45,8 +45,8 @@ cơ chế, khai báo tách bạch.
 >
 > Lưu ý: hai tầng JWT chỉ phủ traffic `/api`. Mặt phẳng `/internal` (permitAll ở service)
 > được bảo vệ bằng **NetworkPolicy**, và nếu cần xác thực *danh tính service* thì dùng
-> **mTLS/mesh** — xem [`deployment-k8s.md §5`](./deployment-k8s.md). Chi tiết verify:
-> [`jwt-authentication.md`](./jwt-authentication.md).
+> **mTLS/mesh** — xem [`deployment-k8s.md §5`](../ops/deployment-k8s.md). Chi tiết verify:
+> [`jwt-authentication.md`](jwt-authentication.md).
 
 ---
 
@@ -212,4 +212,4 @@ Pod lạ ──────(NetworkPolicy chặn)──────────�
 
 > Webhook Stripe là ngoại lệ có chủ đích: vào thẳng Payment qua Ingress riêng (reverse
 > proxy DMZ), verify **chữ ký Stripe** chứ không phải JWT — xem
-> [`payment_issue.md`](./payment_issue.md).
+> [`payment_issue.md`](../payment-ref/payment_issue.md).
