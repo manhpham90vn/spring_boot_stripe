@@ -19,7 +19,7 @@
 - **Database-per-service:** mỗi service một DB PostgreSQL riêng, **không dùng chung**.
 - Không có ACID xuyên service → luồng mua vé dùng **Saga (orchestration)** + bù trừ.
 - Phát event không mất bằng **transactional outbox + Debezium CDC**.
-- Stripe: **một tài khoản duy nhất** (chưa Connect, chưa tách Ledger).
+- Stripe: **một tài khoản duy nhất**, **không** chia tiền nhiều bên (không Connect/Ledger).
 
 ---
 
@@ -35,7 +35,7 @@
 | 5 | `payment` | 8086 | `payment` | — | Cổng **duy nhất** gọi Stripe + webhook. Rate limiter + circuit breaker. |
 | 6 | `ticket` | 8087 | `ticket` | — | Vé đã phát, QR ký số. Consume Kafka. |
 | 7 | `notification` | 8088 | — | — | Gửi email/SMS. Gần như stateless, consume Kafka. |
-| 8 | `waitingroom` | 8089 | — | Redis | Van chống spike (sorted set + CAPTCHA). Làm cuối. |
+| 8 | `waitingroom` | 8089 | — | Redis | Van chống spike (sorted set + CAPTCHA). |
 
 > Cổng 8085 để trống (payment = 8086). Service gọi nhau qua **K8s DNS nội bộ**
 > `http://<svc>:<port>` (dev: docker-compose service name, xem `docker-compose.yml`).

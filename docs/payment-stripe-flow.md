@@ -1,21 +1,22 @@
 # Payment — tích hợp Stripe (design)
 
-> **Trạng thái:** THIẾT KẾ định hướng. `payment` hiện là skeleton. Doc này mô tả LUỒNG khi
-> build; các **cạm bẫy chi tiết** đã có ở [`payment_issue.md`](./payment_issue.md) (đọc kèm).
-> Ràng buộc gốc: [`/CLAUDE.md`](../CLAUDE.md). Liên quan: [`saga-purchase-flow.md`](./saga-purchase-flow.md),
-> [`resilience-flash-sale.md`](./resilience-flash-sale.md).
+> **Trạng thái:** THIẾT KẾ (đa phương thức + cạm bẫy). Spec triển khai card từng file ở
+> [`impl/01-payment-real-stripe.md`](./impl/01-payment-real-stripe.md); thiết kế chốt ở
+> [`services/05-payment.md`](./services/05-payment.md); cạm bẫy chi tiết ở
+> [`payment_issue.md`](./payment_issue.md). Ràng buộc gốc: [`/CLAUDE.md`](../CLAUDE.md).
+> Liên quan: [`saga-purchase-flow.md`](./saga-purchase-flow.md), [`resilience-flash-sale.md`](./resilience-flash-sale.md).
 
 ---
 
 ## 1. Vai trò
-Payment là **cổng DUY NHẤT** gọi ra Stripe (một tài khoản, dùng **Payment Intents**). Sở
-hữu: bản ghi thanh toán, idempotency key, tham chiếu Stripe. Phạm vi hiện tại: **chưa
-Connect, chưa tách Ledger** (chia tiền nhiều bên để sau).
+Payment là **cổng DUY NHẤT** gọi ra Stripe (**một tài khoản**, dùng **Payment Intents**). Sở
+hữu: bản ghi thanh toán, idempotency key, tham chiếu Stripe. **KHÔNG** chia tiền nhiều bên
+(không Connect, không Ledger).
 
 ## 2. Hai chiều giao tiếp với Stripe
 
 ```
-        Order ──POST /internal/charges──▶ PAYMENT ──(rate limiter + retry)──▶ Stripe API
+        Order ─POST /internal/payment-intents─▶ PAYMENT ─(rate limiter + retry)─▶ Stripe API
                                             │                                  (PaymentIntent)
                                             ▼
                                        DB payment: lưu paymentId, status, idempotencyKey

@@ -15,8 +15,8 @@ bán trùng. Thanh toán qua Stripe.
 - Không có ACID transaction xuyên service → dùng **Saga pattern (orchestration)**
   cho luồng mua vé, kèm bước bù trừ (compensating transaction).
 - Đảm bảo phát event không mất bằng **transactional outbox**.
-- **Phạm vi hiện tại**: Stripe dùng **một tài khoản duy nhất**. CHƯA dùng Connect,
-  CHƯA tách Ledger service. Khi cần chia tiền nhiều bên mới thêm sau.
+- Stripe dùng **một tài khoản duy nhất** (Payment Intents); **không** chia tiền
+  nhiều bên (không Connect, không Ledger service).
 
 ## Stack
 - Backend: Spring Boot
@@ -37,17 +37,18 @@ bán trùng. Thanh toán qua Stripe.
 - ~100-200 request/giây mỗi tài khoản. Lỗi vượt ngưỡng = HTTP 429.
 - Payment service phải có rate limiter + retry exponential backoff (Resilience4j)
   để không vượt ngưỡng và xử lý 429 sạch sẽ.
+- Thu tiền là **bất đồng bộ**: client xác nhận PaymentIntent qua **Payment
+  Element**, kết quả `succeeded`/`failed` chốt từ **webhook** (nguồn sự thật).
 - Webhook Stripe phải verify chữ ký, idempotent, đẩy vào Kafka rồi mới xử lý.
 - Stripe phải gọi ngược được vào webhook endpoint → cần reverse proxy ở DMZ.
 
 ## Danh sách service
 
-> **Trạng thái:** 9/9 project skeleton đã tạo xong — `apigateway/`, `auth/`,
-> `catalog/`, `inventory/`, `order/`, `payment/`, `ticket/`, `notification/`,
-> `waitingroom/`. Không cần tạo thêm service nào, bước tiếp là code theo lát cắt
-> dọc (xem "Thứ tự triển khai").
+> **Trạng thái:** các service đã có project — `apigateway/`, `auth/`, `catalog/`,
+> `inventory/`, `order/`, `payment/`, `ticket/`, `notification/`, `waitingroom/`.
+> Mọi thành phần dưới đây đều trong phạm vi.
 
-### Hạ tầng (Phase 0 — dựng trên K8s qua Operator/Helm, không phải project trong repo)
+### Hạ tầng dùng chung (dựng trên K8s qua Operator/Helm, không phải project trong repo)
 Cụm PostgreSQL/Redis/Kafka (Operator: CloudNativePG, Redis Operator, Strimzi),
 Ingress Controller + MetalLB (on-prem không có cloud LB), observability stack
 (Prometheus/Grafana/Loki, OpenTelemetry). Webhook Stripe vào qua **Ingress rule
@@ -56,13 +57,13 @@ DMZ"), verify chữ ký Stripe chứ không phải JWT.
 
 ### 0. API Gateway service (`apigateway/`)
 Cửa vào duy nhất cho traffic nghiệp vụ. Spring Cloud Gateway (WebFlux). Route
-theo path → service qua K8s DNS, validateu
-Ingress. Dựng sớm cùng Phase 0. JWT, rate limit ở biên (Redis),
-circuit breaker (Resilience4j). KHÔNG có DB, KHÔNG business logic. Đứng sa
+theo path → service qua K8s DNS. Validate JWT, rate limit ở biên (Redis),
+circuit breaker (Resilience4j). KHÔNG có DB, KHÔNG business logic. Đứng sau
+Ingress.
 
 ### 1. Auth/User service
 Đăng ký, đăng nhập, phát JWT. Gateway dùng token để xác thực mọi request.
-Sở hữu user, credential, role. DB: PostgreSQL. Giai đoạn đầu giữ gọn.
+Sở hữu user, credential, role. DB: PostgreSQL.
 
 ### 2. Catalog service
 Trả lời "có gì để bán": sự kiện, địa điểm, seat map, ticket type (loại vé), giá.
@@ -81,9 +82,11 @@ Payment thu tiền, xác nhận SOLD + phát event sinh vé khi thành công; ch
 khi lỗi. Sở hữu đơn hàng + trạng thái saga. Dùng outbox. DB: PostgreSQL.
 
 ### 5. Payment service
-Cổng **duy nhất** gọi ra Stripe (một tài khoản, Payment Intents). Xử lý webhook,
-đặt rate limiter/circuit breaker. Sở hữu bản ghi thanh toán, idempotency key,
-tham chiếu Stripe. DB: PostgreSQL. Mọi bước idempotent xuyên service.
+Cổng **duy nhất** gọi ra Stripe (một tài khoản, Payment Intents; Payment Element
+phía client). Thu tiền bất đồng bộ: khởi tạo PaymentIntent → client xác nhận →
+**settle qua webhook**. Đặt rate limiter/circuit breaker. Sở hữu bản ghi thanh
+toán, idempotency key, tham chiếu Stripe. DB: PostgreSQL. Mọi bước idempotent
+xuyên service.
 
 ### 6. Ticket service
 Vé thật đã phát ra sau thanh toán (khác ticket type ở Catalog). Sinh QR code
@@ -96,20 +99,10 @@ Gửi email/SMS (xác nhận đơn, đính kèm vé). Gần như stateless, cons
 ### 8. Waiting Room service
 Van bảo vệ trước spike. Hàng đợi Redis sorted set, thả người vào theo nhịp hạ
 nguồn (và Stripe) chịu được, kèm CAPTCHA chống bot. Admission rate phải biết về
-tồn kho còn lại. Store chính: Redis. Làm CUỐI CÙNG.
-
-## Thứ tự triển khai
-1. Phase 0: hạ tầng dùng chung (K8s + Operator cho PG/Redis/Kafka, Ingress +
-   MetalLB, observability) + API Gateway.
-2. Auth (1) + Catalog (2) — mở khóa phần còn lại.
-3. Lát cắt dọc happy path: Inventory (3, chỉ GA) → Payment (5, một tài khoản) →
-   Order (4). Cột mốc: tiền chạy được end-to-end.
-4. Đắp thịt: mở rộng Inventory cho ghế ngồi, thêm Ticket (6) + Notification (7)
-   chạy async qua Kafka.
-5. Waiting Room (8) — khi đã có luồng hoàn chỉnh để throttle.
+tồn kho còn lại. Store chính: Redis.
 
 ## Nguyên tắc làm việc
-- Dựng "walking skeleton" (luồng mua xuyên suốt tối giản) trước, hoàn thiện sau.
-- Hoãn hai mảnh khó nhất (Connect, Waiting Room) đến khi luồng lõi đã chạy.
 - Phân biệt rõ "vé như sản phẩm" (ticket type, Catalog) với "vé đã phát"
   (issued ticket, Ticket service) — đừng để hai khái niệm dính vào nhau.
+- Mọi luồng tiền/vé phải idempotent xuyên service; webhook Stripe là nguồn sự
+  thật cho "đã thanh toán hay chưa".

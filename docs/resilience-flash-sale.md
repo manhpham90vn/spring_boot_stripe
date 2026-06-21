@@ -47,7 +47,7 @@ Stripe ~100–200 req/s/tài khoản, vượt = 429. Payment **bắt buộc**:
   số lần; **không retry dồn dập** (làm ngưỡng tệ hơn).
 Chi tiết: [`payment-stripe-flow.md`](./payment-stripe-flow.md) §3.
 
-## 5. Lớp 1 — Waiting Room (làm cuối cùng)
+## 5. Lớp 1 — Waiting Room
 Van chặn trước spike: hàng đợi Redis sorted set, thả người theo nhịp mà Inventory + Stripe
 chịu được, kèm CAPTCHA chống bot. **Admission rate phải biết tồn kho còn lại** (đừng thả
 nhiều hơn vé). Thiết kế: [`waiting-room.md`](./waiting-room.md).

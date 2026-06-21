@@ -40,9 +40,9 @@ docker compose logs -f auth   # theo dõi log một service
 | apigateway | :8080 | Gateway nghiệp vụ (thường gọi qua nginx) |
 | auth | :8081 | `/internal/jwks` (chỉ nội bộ) |
 | catalog | :8082 | |
-| inventory · order | :8083 · :8084 | (skeleton) |
-| payment · ticket | :8086 · :8087 | (skeleton) |
-| notification · waitingroom | :8088 · :8089 | (skeleton, trừ notification có consumer) |
+| inventory · order | :8083 · :8084 | luồng mua chạy e2e |
+| payment · ticket | :8086 · :8087 | payment: chuyển sang Stripe thật (bỏ mock) |
+| notification · waitingroom | :8088 · :8089 | notification: consumer Kafka · waitingroom: chưa dựng |
 | **Swagger UI** | http://localhost/swagger | Gom OpenAPI mọi service |
 | **Mailpit** (xem mail dev) | http://localhost:8025 | SMTP nhận ở :1025 |
 | **MinIO console** | http://localhost:9001 | user/pass: `minioadmin`/`minioadmin`; API :9000 |

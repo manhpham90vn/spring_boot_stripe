@@ -1,9 +1,9 @@
 # Inventory — chống bán trùng dưới flash sale (design)
 
-> **Trạng thái:** THIẾT KẾ định hướng. `inventory` hiện là skeleton. Đây là bài toán
-> đúng-sai KHÓ NHẤT của hệ thống: chục nghìn người tranh tồn hữu hạn cùng lúc, **tuyệt đối
-> không bán trùng**. Ràng buộc gốc: [`/CLAUDE.md`](../CLAUDE.md). Liên quan:
-> [`saga-purchase-flow.md`](./saga-purchase-flow.md).
+> **Trạng thái:** THIẾT KẾ. Bài toán đúng-sai KHÓ NHẤT của hệ thống: chục nghìn người
+> tranh tồn hữu hạn cùng lúc, **tuyệt đối không bán trùng**. Ràng buộc gốc:
+> [`/CLAUDE.md`](../CLAUDE.md). Liên quan: [`saga-purchase-flow.md`](./saga-purchase-flow.md),
+> [`services/03-inventory.md`](./services/03-inventory.md).
 
 ---
 
@@ -105,6 +105,7 @@ Không expose ra `/api`; rào bằng NetworkPolicy ([`deployment-k8s.md`](./depl
 5. Waiting Room ([`waiting-room.md`](./waiting-room.md)) **admission rate phải biết tồn còn
    lại** để không thả người vào nhiều hơn vé.
 
-## 9. Phạm vi triển khai (theo CLAUDE.md)
-Bắt đầu **chỉ GA** (counter Redis) cho happy-path tiền chạy end-to-end; mở rộng **ghế ngồi**
-(seat hold) sau.
+## 9. Phạm vi triển khai
+**Cả hai loại tồn trong phạm vi:** GA (counter Redis `DECRBY`) và **ghế ngồi** (seat hold
+`SET NX` + TTL). Lát cắt thẻ + GA chạy trước cho tiền end-to-end; ghế ngồi dùng chung
+khung HOLD/COMMIT/RELEASE (xem [`services/03-inventory.md`](./services/03-inventory.md)).

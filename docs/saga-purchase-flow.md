@@ -1,9 +1,9 @@
 # Saga — luồng mua vé (design)
 
-> **Trạng thái:** THIẾT KẾ định hướng. `order`, `inventory`, `payment` hiện là skeleton —
-> doc này chốt cách triển khai TRƯỚC khi code (lát cắt dọc happy-path lõi). Ràng buộc gốc:
+> **Trạng thái:** THIẾT KẾ. Luồng mua xuyên Order/Inventory/Payment + bù trừ. Ràng buộc gốc:
 > [`/CLAUDE.md`](../CLAUDE.md). Liên quan: [`inventory-no-oversell.md`](./inventory-no-oversell.md),
-> [`payment-stripe-flow.md`](./payment-stripe-flow.md), [`outbox-debezium.md`](./outbox-debezium.md).
+> [`payment-stripe-flow.md`](./payment-stripe-flow.md), [`impl/01-payment-real-stripe.md`](./impl/01-payment-real-stripe.md),
+> [`outbox-debezium.md`](./outbox-debezium.md), [`services/04-order.md`](./services/04-order.md).
 
 ---
 
@@ -27,9 +27,9 @@ Client ──POST /api/order──▶ ORDER (orchestrator)
                               │
             (2) POST inventory /internal/holds  ───▶ INVENTORY: giữ chỗ (Redis), trả holdId
                               │  ◀── 200 held
-            (3) POST payment /internal/charges  ───▶ PAYMENT: PaymentIntent (Stripe), thu tiền
-                              │  ◀── 200 succeeded (hoặc chờ webhook xác nhận)
-            (4) confirm: Order = PAID
+            (3) POST payment /internal/payment-intents ─▶ PAYMENT: tạo PaymentIntent (Stripe)
+                              │  ◀── 200 { clientSecret, PROCESSING } → client xác nhận, CHỜ webhook
+            (4) confirm (sau webhook succeeded): Order = PAID
                 + Inventory commit SOLD (Redis→Postgres)
                 + outbox.fire(OrderCompleted)   ───▶ Kafka order.events
                               │                         ├─▶ TICKET: phát vé (QR ký số)
@@ -46,8 +46,9 @@ Client ──POST /api/order──▶ ORDER (orchestrator)
 
 Hệ thống hỗ trợ đa phương thức → bước (3)(4) **rẽ hai nhánh**:
 
-- **Thẻ (đồng bộ):** bước (3) có thể trả `succeeded` ngay (hoặc qua 3DS). Sau khi
-  **webhook `payment_intent.succeeded`** xác nhận → chạy bước (4) COMMIT + phát vé.
+- **Thẻ (nhanh):** bước (3) tạo PaymentIntent, trả `clientSecret`; client xác nhận
+  bằng **Payment Element** (±3DS). Sau khi **webhook `payment_intent.succeeded`** xác
+  nhận → chạy bước (4) COMMIT + phát vé. KHÔNG fulfill ngay tại bước (3).
 - **Konbini/Furikomi (bất đồng bộ):** bước (3) chỉ tạo PaymentIntent ở trạng thái
   `processing` và trả mã/hướng dẫn cho khách. Đơn chuyển **`AWAITING_PAYMENT`**, **giữ
   chỗ vẫn còn** (TTL = hạn thanh toán, [`inventory §3.1`](./inventory-no-oversell.md)).
@@ -116,6 +117,7 @@ Mạng có thể timeout rồi retry → mỗi lời gọi service phải **an t
 4. **Saga phải resume được** sau restart Order (đọc saga state từ DB, tiếp tục/bù trừ).
 5. Mọi bước **idempotent** (xem §5).
 
-## 8. Thứ tự triển khai (theo CLAUDE.md)
-Inventory (chỉ GA) → Payment (một tài khoản) → Order. Cột mốc: **tiền chạy end-to-end**.
-Đắp thịt sau: ghế ngồi, Ticket, Notification async.
+## 8. Thứ tự triển khai
+Lát cắt **thẻ** trước để tiền chạy end-to-end (xem
+[`impl/01-payment-real-stripe.md`](./impl/01-payment-real-stripe.md)); rồi **async
+Konbini/Furikomi** và **ghế ngồi** dùng chung khung hold/saga/webhook đã có.

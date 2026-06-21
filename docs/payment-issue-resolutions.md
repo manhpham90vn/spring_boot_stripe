@@ -101,9 +101,10 @@
 ---
 
 ## Ngoài phạm vi (⊘ — khớp CLAUDE.md & §10 payment_issue.md)
-- **Stripe Connect / marketplace** (chia tiền nhiều seller) — chưa Connect, chưa Ledger.
+- **Stripe Connect / marketplace** (chia tiền nhiều seller) — KHÔNG Connect, KHÔNG Ledger.
 - **Subscription / recurring** — chỉ thanh toán one-time (mua vé).
-- **Multi-currency** — hệ thống dùng JPY.
+- **Multi-currency động / quy đổi FX** — mỗi loại vé một currency cố định (minor units
+  + ISO-4217), KHÔNG quy đổi tỷ giá khi thanh toán.
 - **Thuế & hoá đơn theo luật Nhật** (消費税 / インボイス) — tầng kế toán, ngoài kỹ thuật thanh toán.
 
 ---

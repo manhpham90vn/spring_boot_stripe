@@ -1,9 +1,8 @@
 # Waiting Room — van chặn spike (design)
 
-> **Trạng thái:** THIẾT KẾ định hướng, **làm CUỐI CÙNG** (theo CLAUDE.md) — chỉ dựng khi đã
-> có luồng mua hoàn chỉnh để throttle. Store chính: **Redis**. Ràng buộc gốc:
+> **Trạng thái:** THIẾT KẾ. Store chính: **Redis**. Ràng buộc gốc:
 > [`/CLAUDE.md`](../CLAUDE.md). Liên quan: [`resilience-flash-sale.md`](./resilience-flash-sale.md),
-> [`inventory-no-oversell.md`](./inventory-no-oversell.md).
+> [`inventory-no-oversell.md`](./inventory-no-oversell.md), [`services/08-waitingroom.md`](./services/08-waitingroom.md).
 
 ---
 
@@ -58,7 +57,7 @@ loạt — quan trọng vì chỗ trong hàng = cơ hội mua.
 4. **Redis HA**: mất sorted set = mất hàng đợi → cần Cluster/Sentinel.
 5. Bot/cào: thêm rate-limit theo IP/thiết bị + CAPTCHA.
 
-## 7. Vì sao làm cuối cùng
-Cần có **luồng mua hoàn chỉnh** (Inventory + Payment + Order) thì mới biết hạ nguồn chịu
-được bao nhiêu để đặt admission rate. Dựng sớm sẽ throttle vào khoảng trống. → Hoãn tới khi
-lõi đã chạy (xem thứ tự triển khai trong [`/CLAUDE.md`](../CLAUDE.md)).
+## 7. Phụ thuộc: cần throughput thật để chỉnh admission
+Admission rate chỉ đặt đúng khi đã đo được hạ nguồn (Inventory + Payment + Order) chịu
+bao nhiêu. Vì vậy Waiting Room phát huy tác dụng nhất **sau khi** luồng mua lõi chạy được
+— bật sớm sẽ throttle vào khoảng trống. Đây là phụ thuộc kỹ thuật, không phải ngoài phạm vi.
