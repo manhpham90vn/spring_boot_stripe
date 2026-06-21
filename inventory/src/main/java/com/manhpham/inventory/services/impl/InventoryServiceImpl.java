@@ -2,6 +2,7 @@ package com.manhpham.inventory.services.impl;
 
 import com.manhpham.inventory.dto.HoldRequest;
 import com.manhpham.inventory.dto.HoldResponse;
+import com.manhpham.inventory.dto.SeatAvailabilityResponse;
 import com.manhpham.inventory.entities.SeatInventory;
 import com.manhpham.inventory.entities.SeatStatus;
 import com.manhpham.inventory.entities.TicketStock;
@@ -94,6 +95,27 @@ public class InventoryServiceImpl implements InventoryService {
             throw new StockNotFoundException(ticketTypeId); // chưa seed (cả GA lẫn SEATED)
         }
         return (int) seats.countByTicketTypeIdAndStatus(ticketTypeId, SeatStatus.AVAILABLE);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SeatAvailabilityResponse> seatStatuses(UUID ticketTypeId) {
+        List<SeatInventory> all = seats.findByTicketTypeId(ticketTypeId);
+        if (all.isEmpty()) {
+            throw new StockNotFoundException(ticketTypeId); // chưa seed / không phải SEATED
+        }
+        // SOLD đọc Postgres (nguồn sự thật); HELD = còn key giữ chỗ trong Redis (chưa commit/hết hạn).
+        return all.stream().map(s -> {
+            String status;
+            if (s.isSold()) {
+                status = SeatStatus.SOLD.name();
+            } else if (Boolean.TRUE.equals(redis.hasKey(seatKey(s.getSeatId())))) {
+                status = "HELD";
+            } else {
+                status = SeatStatus.AVAILABLE.name();
+            }
+            return new SeatAvailabilityResponse(s.getSeatId(), status);
+        }).toList();
     }
 
     // ========================= HOLD ==========================================

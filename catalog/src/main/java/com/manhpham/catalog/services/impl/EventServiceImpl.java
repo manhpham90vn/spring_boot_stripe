@@ -254,7 +254,11 @@ public class EventServiceImpl implements EventService {
         if (tt.getKind() != TicketTypeKind.SEATED) {
             throw new IllegalArgumentException("Loại vé " + ticketTypeId + " không phải SEATED");
         }
-        return seatMaps.findByTicketTypeId(ticketTypeId).stream().map(SeatResponse::from).toList();
+        // Seat-map (tĩnh, Catalog) gộp trạng thái bán (live, Inventory). Thiếu trong map → AVAILABLE.
+        Map<UUID, String> statuses = inventoryClient.seatStatuses(ticketTypeId);
+        return seatMaps.findByTicketTypeId(ticketTypeId).stream()
+                .map(s -> SeatResponse.from(s, statuses.getOrDefault(s.getId(), "AVAILABLE")))
+                .toList();
     }
 
     @Override

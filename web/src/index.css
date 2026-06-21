@@ -224,3 +224,89 @@ a.card:hover {
   padding: 48px 0;
   text-align: center;
 }
+
+/* ---- Seat picker (loại vé SEATED) ------------------------------------- */
+.seatmap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 8px;
+}
+.seatmap__stage {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 6px;
+}
+.seatmap__section-name {
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.seatmap__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.seatmap__row-label {
+  width: 28px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.seat {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.seat:hover:not(:disabled) {
+  border-color: var(--brand);
+}
+.seat--selected {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.seat--held {
+  background: transparent;
+  border-color: var(--warn);
+  color: var(--warn);
+  cursor: not-allowed;
+}
+.seat--sold {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.seat-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.seat-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.seat-legend i {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  display: inline-block;
+}

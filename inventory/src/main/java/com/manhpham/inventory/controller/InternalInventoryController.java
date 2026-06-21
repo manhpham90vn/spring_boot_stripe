@@ -3,6 +3,7 @@ package com.manhpham.inventory.controller;
 import com.manhpham.inventory.dto.AvailabilityResponse;
 import com.manhpham.inventory.dto.HoldRequest;
 import com.manhpham.inventory.dto.HoldResponse;
+import com.manhpham.inventory.dto.SeatAvailabilityResponse;
 import com.manhpham.inventory.dto.SeedStockRequest;
 import com.manhpham.inventory.services.InventoryService;
 import jakarta.validation.Valid;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -50,6 +52,12 @@ public class InternalInventoryController {
     @GetMapping("/stock/{ticketTypeId}")
     public AvailabilityResponse availability(@PathVariable UUID ticketTypeId) {
         return new AvailabilityResponse(ticketTypeId, inventory.available(ticketTypeId));
+    }
+
+    /** SEATED: trạng thái từng ghế (Catalog gộp với seat-map rồi trả ra FE). */
+    @GetMapping("/stock/{ticketTypeId}/seats")
+    public List<SeatAvailabilityResponse> seatStatuses(@PathVariable UUID ticketTypeId) {
+        return inventory.seatStatuses(ticketTypeId);
     }
 
     /** HOLD — giữ chỗ (saga bước 2). */

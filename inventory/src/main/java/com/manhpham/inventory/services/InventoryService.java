@@ -2,6 +2,7 @@ package com.manhpham.inventory.services;
 
 import com.manhpham.inventory.dto.HoldRequest;
 import com.manhpham.inventory.dto.HoldResponse;
+import com.manhpham.inventory.dto.SeatAvailabilityResponse;
 
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +21,9 @@ public interface InventoryService {
 
     /** Số còn lại (GA: counter Redis; SEATED: số ghế AVAILABLE ở Postgres). */
     int available(UUID ticketTypeId);
+
+    /** SEATED: trạng thái từng ghế (AVAILABLE/HELD/SOLD) cho FE tô màu sơ đồ ghế. */
+    List<SeatAvailabilityResponse> seatStatuses(UUID ticketTypeId);
 
     /** Giữ chỗ (GA: trừ counter nguyên tử; SEATED: SET NX từng ghế); idempotent theo orderId. */
     HoldResponse hold(HoldRequest request);

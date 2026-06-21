@@ -1,13 +1,17 @@
 package com.manhpham.catalog.client;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Gọi API NỘI BỘ của Inventory ({@code /internal/**}) qua DNS để seed tồn kho khi admin
@@ -15,6 +19,7 @@ import java.util.UUID;
  * "tổng số vé" không lưu ở Catalog mà được chuyển thẳng sang Inventory.
  */
 @Component
+@Slf4j
 public class InventoryClient {
 
     private final RestClient http;
@@ -46,5 +51,29 @@ public class InventoryClient {
                 .body(Map.of("eventId", eventId, "seatIds", seatIds))
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    /**
+     * Trạng thái từng ghế (AVAILABLE/HELD/SOLD) → {@code seatId -> status}, để gộp vào seat-map.
+     * Inventory chết / lỗi: nuốt lỗi, trả map rỗng (FE coi như AVAILABLE) — không chặn việc duyệt.
+     */
+    public Map<UUID, String> seatStatuses(UUID ticketTypeId) {
+        try {
+            SeatStatus[] arr = http.get()
+                    .uri("/internal/stock/{ticketTypeId}/seats", ticketTypeId)
+                    .retrieve()
+                    .body(SeatStatus[].class);
+            if (arr == null) {
+                return Map.of();
+            }
+            return Arrays.stream(arr).collect(Collectors.toMap(SeatStatus::seatId, SeatStatus::status));
+        } catch (RestClientException e) {
+            log.warn("Không lấy được trạng thái ghế ticketType={}: {}", ticketTypeId, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    /** Bản đồ trạng thái ghế trả về từ Inventory. */
+    private record SeatStatus(UUID seatId, String status) {
     }
 }

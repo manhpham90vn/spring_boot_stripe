@@ -9,6 +9,8 @@ export type OrderStatus =
   | 'REJECTED'
   | 'PAYMENT_FAILED'
 export type TicketStatus = 'VALID' | 'USED'
+export type TicketTypeKind = 'GA' | 'SEATED'
+export type SeatAvailability = 'AVAILABLE' | 'HELD' | 'SOLD'
 
 export interface TokenResponse {
   accessToken: string
@@ -33,9 +35,19 @@ export interface TicketTypeResponse {
   id: string
   name: string
   description: string | null
+  kind: TicketTypeKind
   priceMinor: number
   currency: string
   maxPerOrder: number
+}
+
+export interface SeatResponse {
+  seatId: string
+  section: string | null
+  rowLabel: string | null
+  seatNumber: string | null
+  label: string
+  status: SeatAvailability
 }
 
 export interface EventSummaryResponse {
@@ -61,7 +73,9 @@ export interface EventDetailResponse {
 export interface PlaceOrderRequest {
   eventId: string
   ticketTypeId: string
-  quantity: number
+  // GA: gửi quantity (>=1). SEATED: gửi seatIds (danh sách ghế chọn).
+  quantity?: number
+  seatIds?: string[]
 }
 
 export interface OrderResponse {

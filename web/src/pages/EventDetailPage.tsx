@@ -7,7 +7,12 @@ import { catalog, orders } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { formatDateTime, formatMoney } from '../lib/format'
-import type { EventDetailResponse, OrderResponse, TicketTypeResponse } from '../api/types'
+import type {
+  EventDetailResponse,
+  OrderResponse,
+  SeatResponse,
+  TicketTypeResponse,
+} from '../api/types'
 
 // Khởi tạo Stripe MỘT LẦN (ngoài component) từ khoá publishable. Thiếu khoá → null (UI báo lỗi cấu hình).
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
@@ -23,11 +28,18 @@ export default function EventDetailPage() {
 
   // Trạng thái đặt vé
   const [selected, setSelected] = useState<TicketTypeResponse | null>(null)
-  const [quantity, setQuantity] = useState(1)
+  const [quantity, setQuantity] = useState(1) // chỉ dùng cho GA
+  // SEATED: sơ đồ ghế + ghế đang chọn
+  const [seats, setSeats] = useState<SeatResponse[] | null>(null)
+  const [seatsLoading, setSeatsLoading] = useState(false)
+  const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
   const [placing, setPlacing] = useState(false)
   const [order, setOrder] = useState<OrderResponse | null>(null)
   const [phase, setPhase] = useState<Phase>('form')
   const [orderError, setOrderError] = useState<string | null>(null)
+
+  // Số vé hiện chọn (SEATED = số ghế; GA = quantity) — dùng cho tạm tính & nút đặt.
+  const count = selected?.kind === 'SEATED' ? selectedSeatIds.length : quantity
 
   useEffect(() => {
     if (!id) return
@@ -43,12 +55,41 @@ export default function EventDetailPage() {
     setOrderError(null)
   }
 
+  // Chọn một hạng vé: reset đơn cũ; SEATED thì nạp sơ đồ ghế, GA thì về quantity = 1.
+  function selectTicketType(t: TicketTypeResponse) {
+    setSelected(t)
+    setQuantity(1)
+    setSelectedSeatIds([])
+    setSeats(null)
+    resetOrder()
+    if (t.kind === 'SEATED' && event) {
+      setSeatsLoading(true)
+      catalog
+        .seats(event.id, t.id)
+        .then(setSeats)
+        .catch((e: ApiError) => setOrderError(e.message))
+        .finally(() => setSeatsLoading(false))
+    }
+  }
+
+  function toggleSeat(seatId: string) {
+    setSelectedSeatIds((prev) => {
+      if (prev.includes(seatId)) return prev.filter((s) => s !== seatId)
+      if (selected && prev.length >= selected.maxPerOrder) return prev // chạm trần / đơn
+      return [...prev, seatId]
+    })
+  }
+
   async function placeOrder() {
     if (!event || !selected) return
     setPlacing(true)
     setOrderError(null)
     try {
-      const o = await orders.place({ eventId: event.id, ticketTypeId: selected.id, quantity })
+      const req =
+        selected.kind === 'SEATED'
+          ? { eventId: event.id, ticketTypeId: selected.id, seatIds: selectedSeatIds }
+          : { eventId: event.id, ticketTypeId: selected.id, quantity }
+      const o = await orders.place(req)
       setOrder(o)
       // Đã tạo PaymentIntent → sang bước nhập thẻ; ngược lại (REJECTED / lỗi tạo) → kết quả luôn.
       setPhase(o.status === 'AWAITING_PAYMENT' && o.clientSecret ? 'pay' : 'result')
@@ -93,14 +134,11 @@ export default function EventDetailPage() {
               {formatMoney(t.priceMinor, t.currency)}
             </p>
             <p className="card__meta">Tối đa {t.maxPerOrder} vé / đơn</p>
+            <p className="card__meta">{t.kind === 'SEATED' ? '🪑 Ghế ngồi' : '🎟 Vé tự do'}</p>
             <button
               className="btn btn--primary"
               style={{ marginTop: 8, width: '100%' }}
-              onClick={() => {
-                setSelected(t)
-                setQuantity(1)
-                resetOrder()
-              }}
+              onClick={() => selectTicketType(t)}
             >
               Chọn
             </button>
@@ -109,7 +147,10 @@ export default function EventDetailPage() {
       </div>
 
       {selected && (
-        <div className="panel" style={{ marginTop: 28, maxWidth: 480 }}>
+        <div
+          className="panel"
+          style={{ marginTop: 28, maxWidth: selected.kind === 'SEATED' ? 720 : 480 }}
+        >
           <h2 style={{ marginTop: 0 }}>Đặt mua: {selected.name}</h2>
 
           {!user ? (
@@ -129,32 +170,46 @@ export default function EventDetailPage() {
             <OrderResultView order={order} ticketName={selected.name} />
           ) : (
             <>
-              <div className="field">
-                <label htmlFor="qty">Số lượng</label>
-                <select
-                  id="qty"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
-                >
-                  {Array.from({ length: selected.maxPerOrder }, (_, i) => i + 1).map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {selected.kind === 'SEATED' ? (
+                <SeatPicker
+                  seats={seats}
+                  loading={seatsLoading}
+                  selectedSeatIds={selectedSeatIds}
+                  maxPerOrder={selected.maxPerOrder}
+                  onToggle={toggleSeat}
+                />
+              ) : (
+                <div className="field">
+                  <label htmlFor="qty">Số lượng</label>
+                  <select
+                    id="qty"
+                    value={quantity}
+                    onChange={(e) => setQuantity(Number(e.target.value))}
+                  >
+                    {Array.from({ length: selected.maxPerOrder }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <p className="row" style={{ justifyContent: 'space-between' }}>
-                <span className="muted">Tạm tính</span>
-                <strong>{formatMoney(selected.priceMinor * quantity, selected.currency)}</strong>
+                <span className="muted">Tạm tính {count > 0 && `(${count} vé)`}</span>
+                <strong>{formatMoney(selected.priceMinor * count, selected.currency)}</strong>
               </p>
               {orderError && <div className="alert">{orderError}</div>}
               <button
                 className="btn btn--primary"
                 style={{ width: '100%' }}
-                disabled={placing}
+                disabled={placing || count < 1}
                 onClick={placeOrder}
               >
-                {placing ? 'Đang tạo đơn…' : 'Tiếp tục thanh toán'}
+                {placing
+                  ? 'Đang tạo đơn…'
+                  : selected.kind === 'SEATED' && count < 1
+                    ? 'Chọn ghế để tiếp tục'
+                    : 'Tiếp tục thanh toán'}
               </button>
             </>
           )}
@@ -295,5 +350,91 @@ function OrderResultView({ order, ticketName }: { order: OrderResponse; ticketNa
       </div>
       <p className="muted">Mã đơn: {order.id}</p>
     </>
+  )
+}
+
+/**
+ * Sơ đồ ghế cho loại vé SEATED. Nhóm theo section → hàng (rowLabel), tô màu theo trạng thái.
+ * SOLD/HELD không chọn được; chạm trần maxPerOrder thì khoá các ghế chưa chọn.
+ */
+function SeatPicker({
+  seats,
+  loading,
+  selectedSeatIds,
+  maxPerOrder,
+  onToggle,
+}: {
+  seats: SeatResponse[] | null
+  loading: boolean
+  selectedSeatIds: string[]
+  maxPerOrder: number
+  onToggle: (seatId: string) => void
+}) {
+  if (loading) return <div className="spinner">Đang tải sơ đồ ghế…</div>
+  if (!seats) return null
+  if (seats.length === 0) return <p className="muted">Chưa có ghế nào cho hạng vé này.</p>
+
+  const atLimit = selectedSeatIds.length >= maxPerOrder
+
+  // Gom theo section, rồi theo hàng — giữ thứ tự xuất hiện trong dữ liệu.
+  const sections = new Map<string, Map<string, SeatResponse[]>>()
+  for (const s of seats) {
+    const sec = s.section ?? '—'
+    const row = s.rowLabel ?? '—'
+    if (!sections.has(sec)) sections.set(sec, new Map())
+    const rows = sections.get(sec)!
+    if (!rows.has(row)) rows.set(row, [])
+    rows.get(row)!.push(s)
+  }
+
+  return (
+    <div className="seatmap">
+      <div className="seatmap__stage">Sân khấu</div>
+
+      {[...sections.entries()].map(([sec, rows]) => (
+        <div key={sec}>
+          {sec !== '—' && <p className="seatmap__section-name">{sec}</p>}
+          {[...rows.entries()].map(([row, rowSeats]) => (
+            <div key={row} className="seatmap__row">
+              {row !== '—' && <span className="seatmap__row-label">{row}</span>}
+              {rowSeats.map((s) => {
+                const isSelected = selectedSeatIds.includes(s.seatId)
+                const taken = s.status === 'SOLD' || s.status === 'HELD'
+                const disabled = taken || (atLimit && !isSelected)
+                const cls = isSelected
+                  ? 'seat seat--selected'
+                  : s.status === 'SOLD'
+                    ? 'seat seat--sold'
+                    : s.status === 'HELD'
+                      ? 'seat seat--held'
+                      : 'seat'
+                return (
+                  <button
+                    key={s.seatId}
+                    type="button"
+                    className={cls}
+                    disabled={disabled}
+                    title={`${s.label}${taken ? ' · đã bán' : ''}`}
+                    onClick={() => onToggle(s.seatId)}
+                  >
+                    {s.seatNumber ?? s.label}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      <div className="seat-legend">
+        <span><i style={{ background: 'var(--surface-2)' }} /> Trống</span>
+        <span><i style={{ background: 'var(--brand)', borderColor: 'var(--brand)' }} /> Đang chọn</span>
+        <span><i style={{ borderColor: 'var(--warn)' }} /> Có người giữ</span>
+        <span><i style={{ opacity: 0.5 }} /> Đã bán</span>
+      </div>
+      <p className="muted" style={{ margin: 0 }}>
+        Đã chọn {selectedSeatIds.length}/{maxPerOrder} ghế
+      </p>
+    </div>
   )
 }
