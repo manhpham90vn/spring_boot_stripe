@@ -7,6 +7,8 @@ import { formatMoney, isoToLocalInput, localInputToIso } from '../lib/format'
 import type {
   EventDetailResponse,
   EventStatus,
+  SeatInput,
+  TicketTypeKind,
   TicketTypePayload,
   TicketTypeResponse,
   VenueResponse,
@@ -37,14 +39,30 @@ const savingEvent = ref(false)
 const ttModalOpen = ref(false)
 const ttEditingId = ref<string | null>(null)
 const savingTt = ref(false)
-const tt = reactive<TicketTypePayload>({
+const tt = reactive({
   name: '',
   description: '',
+  kind: 'GA' as TicketTypeKind,
   priceMinor: 0,
   currency: 'VND',
   maxPerOrder: 4,
   totalQty: 100,
 })
+
+// SEATED: bộ sinh ghế đơn giản — 1 khu, số hàng × số ghế/hàng → tự đánh nhãn A1, A2…
+const seatGen = reactive({ section: 'Khán đài A', rows: 5, seatsPerRow: 10 })
+
+const seatLabel = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : `R${i + 1}`)
+
+function buildSeats(): SeatInput[] {
+  const seats: SeatInput[] = []
+  for (let r = 0; r < Number(seatGen.rows); r++) {
+    for (let s = 0; s < Number(seatGen.seatsPerRow); s++) {
+      seats.push({ section: seatGen.section, rowLabel: seatLabel(r), seatNumber: String(s + 1) })
+    }
+  }
+  return seats
+}
 
 async function load() {
   error.value = null
@@ -113,10 +131,14 @@ function openTtCreate() {
   ttEditingId.value = null
   tt.name = ''
   tt.description = ''
+  tt.kind = 'GA'
   tt.priceMinor = 0
   tt.currency = 'VND'
   tt.maxPerOrder = 4
   tt.totalQty = 100
+  seatGen.section = 'Khán đài A'
+  seatGen.rows = 5
+  seatGen.seatsPerRow = 10
   ttModalOpen.value = true
 }
 
@@ -124,10 +146,11 @@ function openTtEdit(t: TicketTypeResponse) {
   ttEditingId.value = t.id
   tt.name = t.name
   tt.description = t.description ?? ''
+  tt.kind = t.kind // loại vé bất biến khi sửa (chỉ hiển thị)
   tt.priceMinor = t.priceMinor
   tt.currency = t.currency
   tt.maxPerOrder = t.maxPerOrder
-  // Catalog không lưu tồn kho → không prefill được; admin nhập lại để ĐẶT LẠI tồn.
+  // Catalog không lưu tồn kho → không prefill được; admin nhập lại để ĐẶT LẠI tồn (chỉ GA).
   tt.totalQty = 100
   ttModalOpen.value = true
 }
@@ -136,20 +159,30 @@ async function saveTt() {
   savingTt.value = true
   error.value = null
   try {
-    const payload: TicketTypePayload = {
+    // Phần chung. Tồn kho/ghế xử lý riêng theo kind & tạo-mới/sửa.
+    const base = {
       name: tt.name,
       description: tt.description,
       priceMinor: Number(tt.priceMinor),
       currency: tt.currency.toUpperCase(),
       maxPerOrder: Number(tt.maxPerOrder),
-      totalQty: Number(tt.totalQty),
     }
-    if (ttEditingId.value) await ticketTypes.update(props.id, ttEditingId.value, payload)
-    else await ticketTypes.add(props.id, payload)
+    if (ttEditingId.value) {
+      // Sửa: backend không nhận seats/kind. GA gửi totalQty (đặt lại tồn); SEATED bỏ trống (ghế bất biến).
+      const payload: TicketTypePayload =
+        tt.kind === 'SEATED' ? base : { ...base, totalQty: Number(tt.totalQty) }
+      await ticketTypes.update(props.id, ttEditingId.value, payload)
+    } else if (tt.kind === 'SEATED') {
+      const seats = buildSeats()
+      if (seats.length === 0) throw new Error('Cần ít nhất 1 ghế cho loại vé SEATED.')
+      await ticketTypes.add(props.id, { ...base, kind: 'SEATED', seats })
+    } else {
+      await ticketTypes.add(props.id, { ...base, kind: 'GA', totalQty: Number(tt.totalQty) })
+    }
     ttModalOpen.value = false
     await load()
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : 'Lưu hạng vé thất bại.'
+    error.value = e instanceof ApiError ? e.message : (e as Error).message || 'Lưu hạng vé thất bại.'
   } finally {
     savingTt.value = false
   }
@@ -247,6 +280,7 @@ async function removeTt(t: TicketTypeResponse) {
         <thead>
           <tr>
             <th>Tên</th>
+            <th>Loại</th>
             <th>Giá</th>
             <th>Tối đa/đơn</th>
             <th style="width: 140px"></th>
@@ -260,6 +294,7 @@ async function removeTt(t: TicketTypeResponse) {
                 {{ t.description }}
               </div>
             </td>
+            <td>{{ t.kind === 'SEATED' ? '🪑 Ghế ngồi' : '🎟 Tự do' }}</td>
             <td>{{ formatMoney(t.priceMinor, t.currency) }}</td>
             <td class="muted">{{ t.maxPerOrder }}</td>
             <td>
@@ -270,7 +305,7 @@ async function removeTt(t: TicketTypeResponse) {
             </td>
           </tr>
           <tr v-if="event.ticketTypes.length === 0">
-            <td colspan="4" class="muted" style="text-align: center; padding: 24px">
+            <td colspan="5" class="muted" style="text-align: center; padding: 24px">
               Chưa có hạng vé nào.
             </td>
           </tr>
@@ -310,13 +345,51 @@ async function removeTt(t: TicketTypeResponse) {
             <input v-model.number="tt.maxPerOrder" type="number" min="1" required />
           </div>
           <div class="field">
-            <label>Tổng tồn kho *</label>
-            <input v-model.number="tt.totalQty" type="number" min="0" required />
+            <label>Loại vé *</label>
+            <select v-model="tt.kind" :disabled="!!ttEditingId">
+              <option value="GA">Tự do (GA)</option>
+              <option value="SEATED">Ghế ngồi (SEATED)</option>
+            </select>
           </div>
         </div>
+
+        <!-- GA: tổng tồn kho -->
+        <div v-if="tt.kind === 'GA'" class="field">
+          <label>Tổng tồn kho *</label>
+          <input v-model.number="tt.totalQty" type="number" min="0" required />
+        </div>
+
+        <!-- SEATED tạo mới: bộ sinh ghế -->
+        <template v-else-if="!ttEditingId">
+          <div class="field">
+            <label>Tên khu *</label>
+            <input v-model="seatGen.section" required maxlength="64" />
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label>Số hàng *</label>
+              <input v-model.number="seatGen.rows" type="number" min="1" max="26" required />
+            </div>
+            <div class="field">
+              <label>Số ghế / hàng *</label>
+              <input v-model.number="seatGen.seatsPerRow" type="number" min="1" required />
+            </div>
+          </div>
+          <p class="muted" style="font-size: 13px">
+            Sẽ tạo <strong>{{ seatGen.rows * seatGen.seatsPerRow }}</strong> ghế
+            (hàng A–{{ seatLabel(seatGen.rows - 1) }}, mỗi hàng {{ seatGen.seatsPerRow }} ghế).
+            Tồn kho = số ghế.
+          </p>
+        </template>
+
+        <!-- SEATED đang sửa: ghế bất biến -->
+        <p v-else class="muted" style="font-size: 13px">
+          Loại vé ghế ngồi — sơ đồ ghế <strong>không đổi được</strong> sau khi tạo.
+        </p>
+
         <p class="muted" style="font-size: 13px">
           Ví dụ VND 250.000 → nhập <code>250000</code>. USD $50.00 → nhập <code>5000</code>.
-          <br />Tổng tồn kho được seed sang Inventory; khi sửa sẽ <strong>đặt lại</strong> tồn (chỉ cho phép lúc sự kiện còn DRAFT).
+          <br />Tồn kho được seed sang Inventory; sửa tồn GA sẽ <strong>đặt lại</strong> (chỉ khi sự kiện còn DRAFT).
         </p>
         <div class="row between" style="margin-top: 18px">
           <button type="button" class="btn" @click="ttModalOpen = false">Huỷ</button>
