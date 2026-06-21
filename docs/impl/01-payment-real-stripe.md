@@ -67,7 +67,7 @@ ALTER TABLE orders ADD COLUMN stripe_pi_id VARCHAR(255);  -- tiện tra cứu/đ
   `automatic_payment_methods.enabled=true`, `metadata.order_id=<orderId>`,
   `Idempotency-Key = "order:<orderId>"`.
 
-### 3.2 Payment — `GET /internal/payments/by-order/{orderId}` *(giữ nguyên)*
+### 3.2 Payment — `GET /internal/payment-intents/by-order/{orderId}`
 Trả `{paymentId, orderId, status, stripePiId, amountMinor, currency}` — cho
 `OrderReconciliationJob` hỏi lại khi đơn kẹt.
 
@@ -195,4 +195,5 @@ stripe.webhook-secret=${STRIPE_WEBHOOK_SECRET:whsec_...}
       reconcile về trạng thái cuối (không mất tiền/không kẹt vĩnh viễn).
 - [ ] Gửi lại cùng webhook event → không phát vé/đổi trạng thái lần hai.
 - [ ] FE: lúc chờ hiện "Đang xử lý", chỉ báo "thất bại" khi `PAYMENT_FAILED` thật.
-- [ ] `scripts/test.http` PHẦN 1 (smoke biên/security) vẫn xanh — không phụ thuộc mock.
+- [ ] Smoke biên/security (curl: health + ma trận public/`401`/`404`, xem
+      [`dev-runbook.md §4`](../overview/dev-runbook.md)) vẫn xanh — không phụ thuộc mock.

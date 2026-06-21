@@ -51,15 +51,23 @@ docker compose logs -f auth   # theo dõi log một service
 | Redis | :6379 | |
 | Kafka | :9092 | |
 
-## 4. Kiểm tra "có gãy gì không"
-Mở `scripts/test.http` trong IDE (JetBrains HTTP Client) → "Run all requests in file",
-hoặc chạy CLI:
+## 4. Kiểm tra "có gãy gì không" (smoke)
+Chạy nhanh bằng `curl` qua nginx (edge). **Smoke health + routing:**
 ```bash
-ijhttp scripts/test.http
+curl -s http://localhost/healthz                       # edge sống
+for s in auth catalog inventory order payment ticket notification waitingroom; do
+  curl -s -o /dev/null -w "%{http_code}  $s\n" http://localhost/health/$s
+done
 ```
-- **PHẦN 1 (smoke):** health 9 service + ma trận public/admin/internal + routing 404.
-- **PHẦN 2 (mua vé):** saga + edge tiền/vé — cần ADMIN (xem §5); happy-path cần
-  `STRIPE_API_KEY` thật ở payment (dummy → đơn `PAYMENT_FAILED`).
+**Ma trận quyền** (mong đợi: public `200`, thiếu token `401`, `/internal` không route qua edge `404`):
+```bash
+curl -s -o /dev/null -w "%{http_code}  public events (→200)\n"   http://localhost/api/catalog/public/events
+curl -s -o /dev/null -w "%{http_code}  /api/auth/me (→401)\n"    http://localhost/api/auth/me
+curl -s -o /dev/null -w "%{http_code}  /internal/jwks (→404)\n"  http://localhost/internal/jwks
+```
+**Luồng mua vé (saga):** cần ADMIN seed danh mục (§5) và `STRIPE_API_KEY` thật ở payment
+(dummy → đơn `PAYMENT_FAILED`); xác nhận thẻ qua Payment Element, kết quả chốt từ webhook
+(`stripe listen --forward-to localhost:8086/webhooks/stripe`).
 
 ## 5. Tạo tài khoản ADMIN (seed)
 Đăng ký luôn ra role USER. Thăng quyền qua DB:
@@ -111,4 +119,3 @@ docker compose down -v         # xoá sạch cả volume (reset hoàn toàn)
 ## 9. Liên quan
 - [`outbox-debezium.md`](../standards/outbox-debezium.md) — luồng event async & debug connector.
 - [`SECURITY-ACCESS-CONTROL.md`](../standards/SECURITY-ACCESS-CONTROL.md) · [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md) — vì sao 401/403, path nào public.
-- `scripts/test.http` — test API (smoke bảo mật + luồng mua vé) cho IDE/`ijhttp`.

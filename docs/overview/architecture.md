@@ -78,10 +78,13 @@
   chỉ `flyway-core`. Xem [memory boot4-modular-autoconfig].
 - **Build:** JDK không có sẵn trên PATH host → build qua image dev `ticketing-dev`:
   ```sh
+  # Cache .m2 mount đúng HOME của image (user `app`) = /home/app/.m2 — KHÔNG phải /root/.m2.
   docker run --rm --entrypoint sh \
-    -v "$PWD/<service>":/workspace -v ticketing-infra_maven-cache:/root/.m2 \
+    -v "$PWD/<service>":/workspace -v ticketing-infra_maven-cache:/home/app/.m2 \
     -w /workspace ticketing-dev:latest -c "./mvnw -q -DskipTests test-compile"
   ```
+  Service phụ thuộc `common-security` (order, ticket, …): cài nó vào cache trước —
+  `... -v "$PWD/common-security":/workspace ... -c "./mvnw -q -DskipTests install"`.
 
 ---
 

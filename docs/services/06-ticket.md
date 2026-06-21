@@ -35,7 +35,7 @@ phát vé + sinh **QR code ký số**. Validate khi quét tại cổng (một-v�
 |---|---|---|---|---|
 | GET | `/api/ticket` | JWT | – | `[TicketResponse]` của chính mình |
 | GET | `/api/ticket/{id}/qr.png` | JWT (chủ vé) | – | 200 image/png · **404** nếu không thuộc mình (IDOR) |
-| POST | `/internal/tickets/validate` | internal (app cổng) | `{qrToken}` | `{valid, ticketId?, eventId?, reason?}` |
+| POST | `/internal/validate` | internal (app cổng) | `{qrToken}` | `{valid, ticketId?, eventId?, reason?}` |
 
 `TicketResponse`: `{id,orderId,eventId,ticketTypeId,seatLabel?,status,qrToken,issuedAt}`.
 

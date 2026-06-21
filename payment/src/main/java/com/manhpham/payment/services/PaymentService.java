@@ -14,4 +14,11 @@ public interface PaymentService {
 
     /** Tra trạng thái thanh toán của một đơn (cho reconciliation phía Order). 404 nếu chưa có. */
     ChargeResponse getByOrder(java.util.UUID orderId);
+
+    /**
+     * Hoàn tiền cho đơn — bù trừ saga khi đã thu tiền nhưng không chốt được SOLD
+     * (saga-purchase-flow.md §4). Idempotent: gọi lại khi đã REFUNDED trả lại trạng thái, KHÔNG
+     * hoàn hai lần. 404 nếu chưa có payment.
+     */
+    ChargeResponse refund(java.util.UUID orderId);
 }

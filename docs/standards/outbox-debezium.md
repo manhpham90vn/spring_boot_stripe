@@ -301,5 +301,5 @@ curl -s http://localhost:8025/api/v1/messages | jq '.total'   # hoặc mở http
 ## 10. Liên quan
 - [`architecture.md`](../overview/architecture.md) — bản đồ service & ràng buộc.
 - [`API-CONVENTIONS.md`](API-CONVENTIONS.md) — quy ước path (event là kênh khác, async).
-- `scripts/test.http` — test HTTP đồng bộ (chưa kiểm luồng mail async; có thể
-  mở rộng để poll Mailpit sau khi đăng ký).
+- [`dev-runbook.md §4`](../overview/dev-runbook.md) — smoke-test HTTP đồng bộ (curl). Luồng mail
+  async kiểm thủ công qua Mailpit (http://localhost:8025) sau khi đăng ký.

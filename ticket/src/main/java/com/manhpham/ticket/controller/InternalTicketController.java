@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
  * không phải client công khai) — rào bằng mạng, không JWT người dùng. Xem API-CONVENTIONS.md.
  */
 @RestController
-@RequestMapping("/internal/tickets")
+@RequestMapping("/internal")
 @RequiredArgsConstructor
 public class InternalTicketController {
 

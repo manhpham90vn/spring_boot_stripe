@@ -90,6 +90,12 @@ Order lưu **trạng thái saga** (đang ở bước nào, holdId, paymentIntent
 Bù trừ phải **idempotent** và nên chạy bền (retry) — đẩy vào hàng đợi/scheduler nếu cần,
 không để treo trên request của client.
 
+> **Đã triển khai:** nhánh "Xác nhận (4)" — khi webhook `succeeded` nhưng `Inventory commit`
+> trả **404** (hold hết hạn) → Order gọi `POST payment /internal/refunds` (idempotency key
+> `refund:order:<orderId>`) rồi `order.cancel()` = **CANCELLED**. Lỗi commit tạm thời (5xx/timeout)
+> **KHÔNG** refund — để Kafka redeliver thử lại (idempotent). Xem `OrderServiceImpl#onPaymentSettled`,
+> [`services/05-payment.md`](../services/05-payment.md) §Refund.
+
 ## 5. Idempotency xuyên service (BẮT BUỘC)
 
 Mạng có thể timeout rồi retry → mỗi lời gọi service phải **an toàn khi lặp**:

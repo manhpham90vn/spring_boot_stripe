@@ -19,6 +19,14 @@ public interface PaymentGateway {
     /** Lấy lại client_secret của một PaymentIntent đã tạo (cho idempotent hit / resume). */
     String retrieveClientSecret(String paymentIntentId);
 
+    /**
+     * Hoàn tiền TOÀN PHẦN cho một PaymentIntent đã succeeded — bù trừ saga khi đã thu tiền nhưng
+     * không chốt được SOLD (hết vé, saga-purchase-flow.md §4). {@code idempotencyKey}
+     * (= "refund:order:&lt;orderId&gt;") đảm bảo timeout/retry KHÔNG hoàn hai lần. Trả id refund
+     * của Stripe (lưu làm {@code paymentRef}).
+     */
+    String refund(String paymentIntentId, String idempotencyKey);
+
     /** Kết quả tạo intent: id PaymentIntent + client_secret (cho FE xác nhận) + trạng thái. */
     record IntentResult(String paymentIntentId, String clientSecret, Status status) {
         // PROCESSING: đã tạo intent, chờ webhook. FAILED: lỗi nghiệp vụ khi tạo (không retry được).

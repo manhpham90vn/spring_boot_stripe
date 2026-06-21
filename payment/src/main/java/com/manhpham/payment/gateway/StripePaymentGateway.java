@@ -4,6 +4,7 @@ import com.stripe.exception.ApiConnectionException;
 import com.stripe.exception.RateLimitException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.Refund;
 import com.stripe.net.RequestOptions;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -79,6 +80,31 @@ public class StripePaymentGateway implements PaymentGateway {
         } catch (StripeException e) {
             log.warn("[STRIPE] retrieve client_secret lỗi PI={}: {}", paymentIntentId, e.getMessage());
             return null;
+        }
+    }
+
+    @Override
+    @RateLimiter(name = "stripe")
+    @Retry(name = "stripe") // retry-exceptions=StripeTransientException → chỉ lỗi tạm thời; hết lần thì ném ra
+    public String refund(String paymentIntentId, String idempotencyKey) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("payment_intent", paymentIntentId);
+
+        RequestOptions options = RequestOptions.builder()
+                .setApiKey(apiKey)
+                .setIdempotencyKey(idempotencyKey)         // gọi lại không hoàn hai lần (payment_issue.md 2.18)
+                .build();
+        try {
+            Refund refund = Refund.create(params, options);
+            log.info("[STRIPE] Refund {} PI={} status={}", refund.getId(), paymentIntentId, refund.getStatus());
+            return refund.getId();
+        } catch (StripeException e) {
+            if (isRetryable(e)) {
+                throw new StripeTransientException(e); // @Retry backoff cho lỗi tạm thời
+            }
+            // Lỗi nghiệp vụ 4xx (vd PI chưa succeeded) — KHÔNG retry; ném để saga rollback + thử lại sau.
+            log.warn("[STRIPE] refund business error PI={}: {}", paymentIntentId, e.getMessage());
+            throw new IllegalStateException("Stripe refund thất bại PI=" + paymentIntentId + ": " + e.getMessage(), e);
         }
     }
 

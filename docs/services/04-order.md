@@ -5,7 +5,8 @@
 ## Trách nhiệm
 **Trái tim điều phối.** Tạo đơn → giữ chỗ (Inventory) → tạo PaymentIntent (Payment)
 → chờ kết quả → khi succeeded: commit SOLD + đơn PAID + phát `OrderCompleted`; khi
-failed: **bù trừ** (nhả chỗ) + PAYMENT_FAILED. Sở hữu đơn + trạng thái saga + outbox.
+failed: **bù trừ** (nhả chỗ) + PAYMENT_FAILED; nếu đã thu tiền nhưng hết vé lúc chốt SOLD:
+**refund + nhả chỗ** + CANCELLED (saga §4). Sở hữu đơn + trạng thái saga + outbox.
 
 ## Database `order`
 
@@ -32,15 +33,21 @@ failed: **bù trừ** (nhả chỗ) + PAYMENT_FAILED. Sở hữu đơn + trạng
 
 ## State machine (`OrderStatus`)
 ```
-PENDING ─hold OK + intent tạo─► AWAITING_PAYMENT ─webhook succeeded─► PAID
+PENDING ─hold OK + intent tạo─► AWAITING_PAYMENT ─webhook succeeded + commit SOLD OK─► PAID
    │                                   │
-   └─hold fail─► REJECTED              └─webhook failed/intent lỗi─► PAYMENT_FAILED
+   │                                   ├─webhook succeeded NHƯNG hold hết hạn─► CANCELLED  (refund + nhả chỗ)
+   └─hold fail─► REJECTED              └─webhook failed/intent lỗi────────────► PAYMENT_FAILED  (nhả chỗ)
 ```
 - `PENDING`: vừa tạo, chưa giữ chỗ.
 - `AWAITING_PAYMENT`: đã hold + đã tạo PaymentIntent, **chờ webhook** (bình thường kéo dài).
 - `PAID`: đã commit SOLD, đã phát OrderCompleted.
-- `REJECTED`: không giữ được chỗ (hết vé).
-- `PAYMENT_FAILED`: thu tiền hỏng → đã nhả chỗ.
+- `REJECTED`: không giữ được chỗ (hết vé) — chưa thu tiền.
+- `PAYMENT_FAILED`: thu tiền hỏng **trước khi** thu được tiền → đã nhả chỗ.
+- `CANCELLED`: **đã thu tiền** nhưng hold hết hạn lúc chốt SOLD → đã **refund + nhả chỗ** (bù trừ §4).
+
+> Trạng thái chuẩn ở [`saga-purchase-flow.md §3`](../flows/saga-purchase-flow.md) còn có `COMPLETED`
+> (PAID → COMPLETED khi Ticket xác nhận đã phát vé). Slice hiện tại **chưa wire feedback Ticket→Order**
+> nên dừng ở `PAID` (đã phát `OrderCompleted` để Ticket/Notification xử lý).
 
 ## API
 | Method | Path | Auth | Request | Response |
@@ -65,14 +72,14 @@ paymentId,clientSecret?,failureReason?}`. `clientSecret` **chỉ** ở response 
 ## Luồng async `onPaymentSettled` (consume `payment.events`)
 ```
 nếu order KHÔNG ở AWAITING_PAYMENT → bỏ qua (idempotent, at-least-once)
-succeeded → Inventory commit(holdId) → order.markPaid(paymentId)
-           → outbox OrderCompleted
-failed/canceled → Inventory delete hold (nhả) → order.failPayment(reason)
+succeeded → Inventory commit(holdId) → order.markPaid(paymentId) → outbox OrderCompleted
+           └─ commit 404 (hold hết hạn) → Payment refund(orderId) → order.cancel() = CANCELLED
+failed/canceled → Inventory delete hold (nhả) → order.failPayment(reason) = PAYMENT_FAILED
 ```
 
 ## Job nền
 `OrderReconciliationJob`: với đơn kẹt `AWAITING_PAYMENT` quá `cutoff`, gọi Payment
-`GET /internal/payments/by-order/{id}` (nguồn sự thật) để phân xử — chống mất webhook.
+`GET /internal/payment-intents/by-order/{id}` (nguồn sự thật) để phân xử — chống mất webhook.
 
 ## Invariant
 - Order **tự tính tiền** từ Catalog (không tin client gửi amount).

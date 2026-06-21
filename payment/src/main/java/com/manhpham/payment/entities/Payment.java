@@ -78,6 +78,20 @@ public class Payment {
         this.paymentRef = paymentRef;
     }
 
+    /** Đã hoàn tiền (bù trừ saga khi đã thu tiền nhưng hết vé — saga-purchase-flow.md §4). */
+    public void refund(String refundRef) {
+        this.status = PaymentStatus.REFUNDED;
+        this.paymentRef = refundRef;
+    }
+
+    public boolean isSucceeded() {
+        return status == PaymentStatus.SUCCEEDED;
+    }
+
+    public boolean isRefunded() {
+        return status == PaymentStatus.REFUNDED;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

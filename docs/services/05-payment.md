@@ -18,7 +18,7 @@ tham chiếu Stripe. KHÔNG có `MockPaymentGateway`. Chi tiết triển khai:
 | order_id | UUID | NOT NULL **UNIQUE** (1 payment/đơn — idempotency lớp DB) |
 | amount_minor | BIGINT | NOT NULL CHECK ≥ 0 |
 | currency | VARCHAR(3) | NOT NULL |
-| status | VARCHAR(32) | NOT NULL — `PENDING\|PROCESSING\|SUCCEEDED\|FAILED\|CANCELED` |
+| status | VARCHAR(32) | NOT NULL — `PENDING\|PROCESSING\|SUCCEEDED\|FAILED\|CANCELED\|REFUNDED` |
 | stripe_pi_id | VARCHAR(255) | NULL — PaymentIntent (`pi_...`), `ix_payments_pi` |
 | payment_ref | VARCHAR(255) | NULL — tham chiếu charge/latest |
 | created_at / updated_at | TIMESTAMPTZ | NOT NULL |
@@ -38,7 +38,11 @@ tham chiếu Stripe. KHÔNG có `MockPaymentGateway`. Chi tiết triển khai:
 | Method | Path | Request | Response |
 |---|---|---|---|
 | POST | `/internal/payment-intents` | `{orderId, amountMinor, currency}` | `{paymentId, stripePiId, clientSecret, status:"PROCESSING"}` |
-| GET | `/internal/payments/by-order/{orderId}` | – | `{paymentId,orderId,status,stripePiId,amountMinor,currency}` · 404 |
+| GET | `/internal/payment-intents/by-order/{orderId}` | – | `{paymentId,orderId,status,stripePiId,amountMinor,currency}` · 404 |
+| POST | `/internal/refunds` | `{orderId}` | `{paymentId,orderId,status:"REFUNDED",reference,stripePiId}` · 404 |
+
+> Quy ước path nội bộ **không lặp tên service** (xem [`API-CONVENTIONS.md §4`](../standards/API-CONVENTIONS.md)):
+> resource là `payment-intents`/`refunds`, KHÔNG phải `payments`.
 
 Tạo intent: `PaymentIntent.create` với `automatic_payment_methods.enabled=true`,
 `metadata.order_id`, header `Idempotency-Key="order:<orderId>"`. **KHÔNG** phát
@@ -78,10 +82,18 @@ bình thường (TTL hold theo phương thức — xem [`inventory-no-oversell.m
 - `@Retry("stripe")`: backoff lũy thừa (max 4), **chỉ** lỗi tạm thời (429/timeout/5xx
   qua `StripeTransientException`); 4xx nghiệp vụ (thẻ từ chối) **không** retry → fallback FAILED.
 
+## Refund (bù trừ saga §4)
+`POST /internal/refunds {orderId}` — Order gọi khi **đã thu tiền nhưng hết vé** lúc chốt SOLD
+(xem [`saga-purchase-flow.md §4`](../flows/saga-purchase-flow.md)). Hoàn **toàn phần** PaymentIntent
+qua Stripe (`Refund.create`), `Idempotency-Key="refund:order:<orderId>"` → gọi lại KHÔNG hoàn hai
+lần. Chỉ hoàn khi payment đang `SUCCEEDED`; đã `REFUNDED` → trả lại nguyên trạng (idempotent).
+Cùng `@RateLimiter`/`@Retry("stripe")` như tạo intent.
+
 ## Idempotency (nhiều tầng)
 1. `order_id` UNIQUE ⇒ 1 payment/đơn.
 2. `Idempotency-Key=order:<orderId>` ⇒ Stripe không tạo 2 intent.
 3. `processed_events` ⇒ webhook trùng/sai thứ tự bị bỏ qua.
+4. `Idempotency-Key=refund:order:<orderId>` ⇒ Stripe không hoàn hai lần.
 
 ## Config
 ```properties

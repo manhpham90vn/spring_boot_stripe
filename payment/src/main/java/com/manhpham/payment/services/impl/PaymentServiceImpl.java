@@ -80,4 +80,28 @@ public class PaymentServiceImpl implements PaymentService {
                 .map(ChargeResponse::from)
                 .orElseThrow(() -> new PaymentNotFoundException(orderId));
     }
+
+    @Override
+    @Transactional
+    public ChargeResponse refund(UUID orderId) {
+        Payment payment = payments.findByOrderId(orderId)
+                .orElseThrow(() -> new PaymentNotFoundException(orderId));
+
+        // Idempotent: đã hoàn rồi → trả lại, KHÔNG gọi Stripe lần nữa (saga retry an toàn).
+        if (payment.isRefunded()) {
+            log.info("refund idempotent hit order={} (đã REFUNDED)", orderId);
+            return ChargeResponse.from(payment);
+        }
+        // Chỉ hoàn được khi đã THẬT SỰ thu tiền (webhook succeeded) — nếu không thì không có gì để hoàn.
+        if (!payment.isSucceeded()) {
+            throw new IllegalStateException(
+                    "Không thể refund order=" + orderId + " ở trạng thái " + payment.getStatus());
+        }
+
+        // Idempotency key ổn định theo đơn → Stripe KHÔNG hoàn hai lần dù saga gọi lại.
+        String refundRef = gateway.refund(payment.getStripePiId(), "refund:order:" + orderId);
+        payment.refund(refundRef);
+        log.info("Payment order={} -> REFUNDED ref={}", orderId, refundRef);
+        return ChargeResponse.from(payment);
+    }
 }

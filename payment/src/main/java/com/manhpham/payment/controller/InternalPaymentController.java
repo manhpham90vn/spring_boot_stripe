@@ -3,6 +3,7 @@ package com.manhpham.payment.controller;
 import com.manhpham.payment.dto.ChargeResponse;
 import com.manhpham.payment.dto.CreateIntentRequest;
 import com.manhpham.payment.dto.IntentResponse;
+import com.manhpham.payment.dto.RefundRequest;
 import com.manhpham.payment.services.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,8 +35,14 @@ public class InternalPaymentController {
     }
 
     /** Tra trạng thái thanh toán của một đơn — Order dùng cho reconciliation (khi mất event). */
-    @GetMapping("/payments/by-order/{orderId}")
+    @GetMapping("/payment-intents/by-order/{orderId}")
     public ChargeResponse byOrder(@PathVariable UUID orderId) {
         return payments.getByOrder(orderId);
+    }
+
+    /** Hoàn tiền cho đơn (saga bù trừ bước 4: đã thu tiền nhưng hết vé). Idempotent theo orderId. */
+    @PostMapping("/refunds")
+    public ChargeResponse refund(@Valid @RequestBody RefundRequest request) {
+        return payments.refund(request.orderId());
     }
 }

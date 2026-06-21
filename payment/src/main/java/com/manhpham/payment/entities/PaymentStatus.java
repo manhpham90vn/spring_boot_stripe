@@ -10,5 +10,6 @@ public enum PaymentStatus {
     PROCESSING,   // đã tạo PaymentIntent, chờ client xác nhận + webhook
     SUCCEEDED,    // webhook xác nhận đã thu tiền
     FAILED,       // tạo intent lỗi nghiệp vụ / webhook payment_failed
-    CANCELED      // PaymentIntent bị huỷ
+    CANCELED,     // PaymentIntent bị huỷ
+    REFUNDED      // đã hoàn tiền (bù trừ saga: đã thu nhưng hết vé — saga-purchase-flow.md §4)
 }

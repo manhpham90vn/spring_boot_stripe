@@ -30,7 +30,17 @@ public class PaymentClient {
 
     /** Tra trạng thái thanh toán của đơn — cho reconciliation khi event payment.events bị mất. */
     public ChargeResult byOrder(UUID orderId) {
-        return http.get().uri("/internal/payments/by-order/{id}", orderId).retrieve().body(ChargeResult.class);
+        return http.get().uri("/internal/payment-intents/by-order/{id}", orderId).retrieve().body(ChargeResult.class);
+    }
+
+    /** Hoàn tiền cho đơn (saga bù trừ §4: đã thu tiền nhưng hết vé). Idempotent theo orderId. */
+    public ChargeResult refund(UUID orderId) {
+        return http.post()
+                .uri("/internal/refunds")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("orderId", orderId))
+                .retrieve()
+                .body(ChargeResult.class);
     }
 
     /** Kết quả tạo intent. status: PROCESSING (chờ webhook) | FAILED (lỗi tạo, cần bù trừ). */

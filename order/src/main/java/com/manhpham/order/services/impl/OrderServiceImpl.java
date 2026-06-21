@@ -29,6 +29,7 @@ import java.util.UUID;
  *  place():  tạo đơn → giữ chỗ → TẠO PaymentIntent → AWAITING_PAYMENT (commit) → trả clientSecret.
  *            (saga DỪNG; client xác nhận thẻ qua Payment Element, kết quả về từ webhook)
  *  onPaymentSettled():  SUCCEEDED → chốt SOLD + PAID + phát OrderCompleted
+ *                       SUCCEEDED nhưng hold hết hạn → refund + nhả chỗ + CANCELLED (bù trừ §4)
  *                       FAILED    → nhả chỗ + PAYMENT_FAILED   (bù trừ)
  * </pre>
  *
@@ -119,9 +120,18 @@ public class OrderServiceImpl implements OrderService {
         }
 
         if (event.succeeded()) {
-            // Chốt SOLD ở Inventory (idempotent). Edge async (Konbini): nếu hold đã hết hạn ở
-            // đây thì là ca "đã thu tiền nhưng hết vé" (payment_issue.md 1.4) → cần refund — TODO.
-            inventory.commit(order.getHoldId());
+            // Chốt SOLD ở Inventory (idempotent). Edge async (Konbini): nếu hold đã HẾT HẠN ở đây
+            // thì là ca "đã thu tiền nhưng hết vé" (payment_issue.md 1.4) → bù trừ saga §4: REFUND.
+            try {
+                inventory.commit(order.getHoldId());
+            } catch (HttpClientErrorException.NotFound holdGone) {
+                // Hold đã hết hạn nhưng tiền đã thu → hoàn tiền + CANCELLED (saga-purchase-flow.md §4).
+                payment.refund(order.getId());
+                order.cancel("Hết vé khi chốt SOLD sau khi đã thu tiền — đã hoàn tiền");
+                log.warn("Order {} CANCELLED + refund (hold {} hết hạn sau khi thu tiền)",
+                        order.getId(), order.getHoldId());
+                return;
+            }
             order.markPaid(event.paymentId());
             outbox.fire(OrderCompletedOutboxEvent.of(OrderCompletedEvent.of(
                     order.getId(), order.getUserId(), order.getEmail(), order.getEventId(),

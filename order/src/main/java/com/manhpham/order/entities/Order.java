@@ -116,6 +116,12 @@ public class Order {
         this.failureReason = reason;
     }
 
+    /** Bù trừ saga §4: đã thu tiền nhưng hết vé lúc chốt SOLD → đã refund + nhả chỗ. */
+    public void cancel(String reason) {
+        this.status = OrderStatus.CANCELLED;
+        this.failureReason = reason;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
