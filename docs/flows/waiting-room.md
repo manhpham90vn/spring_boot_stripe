@@ -1,6 +1,6 @@
 # Waiting Room — van chặn spike (design)
 
-> **Trạng thái:** THIẾT KẾ. Store chính: **Redis**. Ràng buộc gốc:
+> **Trạng thái:** ĐÃ TRIỂN KHAI (`waitingroom/`, WebFlux + Reactive Redis). Store chính: **Redis**. Ràng buộc gốc:
 > [`/CLAUDE.md`](../../CLAUDE.md). Liên quan: [`resilience-flash-sale.md`](../standards/resilience-flash-sale.md),
 > [`inventory-no-oversell.md`](inventory-no-oversell.md), [`services/08-waitingroom.md`](../services/08-waitingroom.md).
 

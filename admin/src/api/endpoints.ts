@@ -1,5 +1,6 @@
 import { http, setToken } from './client'
 import type {
+  AdmissionConfig,
   EventDetailResponse,
   EventPayload,
   EventStatus,
@@ -39,6 +40,13 @@ export const events = {
   changeStatus: (id: string, status: EventStatus) =>
     http.put<EventDetailResponse>(`${ADMIN}/events/${id}/status`, { status }),
   remove: (id: string) => http.del(`${ADMIN}/events/${id}`),
+}
+
+// Cấu hình admission của Waiting Room (lưu Redis, áp dụng ngay — không cần redeploy).
+export const waitingroom = {
+  getConfig: () => http.get<AdmissionConfig>('/api/waitingroom/admin/config'),
+  updateConfig: (p: AdmissionConfig) =>
+    http.put<AdmissionConfig>('/api/waitingroom/admin/config', p),
 }
 
 export const ticketTypes = {

@@ -4,6 +4,7 @@ import LoginView from '../views/LoginView.vue'
 import VenuesView from '../views/VenuesView.vue'
 import EventsView from '../views/EventsView.vue'
 import EventDetailView from '../views/EventDetailView.vue'
+import WaitingRoomView from '../views/WaitingRoomView.vue'
 
 const router = createRouter({
   // BASE_URL theo vite.config (mặc định '/' vì admin chạy trên domain riêng).
@@ -14,6 +15,7 @@ const router = createRouter({
     { path: '/events', name: 'events', component: EventsView },
     { path: '/events/:id', name: 'event-detail', component: EventDetailView, props: true },
     { path: '/venues', name: 'venues', component: VenuesView },
+    { path: '/waiting-room', name: 'waiting-room', component: WaitingRoomView },
     { path: '/:pathMatch(.*)*', redirect: '/events' },
   ],
 })

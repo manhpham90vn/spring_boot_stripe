@@ -431,6 +431,10 @@ services:
         condition: service_healthy
     environment:
       <<: *spring-env
+      # Verify JWT để gác /api/waitingroom/admin/** (chỉnh cấu hình admission từ admin).
+      JWK_SET_URI: http://auth:8081/internal/jwks
+      # Đọc tồn kho để biết khi nào ngừng thả (admission rate phải biết tồn kho còn lại).
+      ROUTE_INVENTORY_URI: http://inventory:8083
     volumes:
       - ./waitingroom:/workspace
       - maven-cache:/home/app/.m2

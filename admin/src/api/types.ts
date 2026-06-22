@@ -3,6 +3,13 @@
 export type EventStatus = 'DRAFT' | 'ON_SALE' | 'CLOSED' | 'CANCELLED'
 export type TicketTypeKind = 'GA' | 'SEATED'
 
+// Cấu hình admission động của Waiting Room (rate = số người thả/giây; TTL tính bằng giây).
+export interface AdmissionConfig {
+  rate: number
+  tokenTtlSeconds: number
+  admitTtlSeconds: number
+}
+
 export interface TokenResponse {
   accessToken: string
   tokenType: string

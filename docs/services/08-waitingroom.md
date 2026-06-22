@@ -10,21 +10,36 @@ autoscale → đây là cơ chế hấp thụ đỉnh tải. **Store chính: Red
 ## Redis keyspace
 | Key | Kiểu | Ý nghĩa |
 |---|---|---|
-| `wr:queue:{eventId}` | ZSET (score = seq/timestamp) | hàng đợi chờ; vị trí = rank |
-| `wr:token:{token}` | string `{userId,eventId}` | TTL — định danh 1 người trong hàng |
-| `wr:admit:{eventId}:{token}` | string | TTL — "đã được vào", cho phép gọi `/api/order` |
-| `wr:rate:{eventId}` | string(int)/config | nhịp thả mỗi giây (admission rate) |
-| `wr:captcha:{token}` | string | TTL — đã qua CAPTCHA |
+| `wr:events` | SET | eventId đang có hàng (AdmissionJob duyệt) |
+| `wr:seq:{eventId}` | string(int) | bộ đếm tăng dần → score ZSET (FIFO công bằng) |
+| `wr:queue:{eventId}` | ZSET (score = seq) | hàng đợi chờ; vị trí = rank |
+| `wr:token:{token}` | string `{eventId}` | TTL — định danh 1 chỗ trong hàng |
+| `wr:admit:{eventId}:{token}` | string | TTL — "đã được vào" (PASS), cho phép gọi `/api/order` |
+| `wr:rate:{eventId}` | string(int) | nhịp thả per-event (override `wr:config`) |
+| `wr:soldout:{eventId}` | string | cờ hết vé → ngừng thả |
+| `wr:config` | HASH | cấu hình admission động (rate/tokenTtlSeconds/admitTtlSeconds) |
+| `wr:captcha:{captchaId}` | string | TTL — đáp án CAPTCHA (one-time) |
 
 ## API
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| POST | `/api/waitingroom/public/{eventId}/enqueue` | – (+CAPTCHA) | `{captchaToken}` | `{token, position, etaSeconds}` |
-| GET | `/api/waitingroom/public/{eventId}/status` | – | `?token=` | `{position, admitted, accessToken?}` |
+| GET | `/api/waitingroom/public/captcha` | – | – | PNG + header `X-Captcha-Id` |
+| POST | `/api/waitingroom/public/{eventId}/enqueue` | – (+CAPTCHA) | `{captchaId, captchaAnswer}` | `{token, position, etaSeconds}` |
+| GET | `/api/waitingroom/public/{eventId}/status` | – | `?token=` | `{position, admitted, accessToken?, soldOut}` |
+| GET | `/internal/admission/{eventId}/check` | mạng | `?token=` | `{valid}` |
+| POST | `/internal/events/{eventId}/rate` | mạng | `?rate=` | 204 |
+| POST | `/internal/events/{eventId}/soldout` | mạng | – | 204 |
+| GET / PUT | `/api/waitingroom/admin/config` | ADMIN | `{rate, tokenTtlSeconds, admitTtlSeconds}` | cùng |
 
-- `enqueue`: verify CAPTCHA → thêm vào `wr:queue:{eventId}` (ZADD) → trả `token` + vị trí.
-- `status`: trả vị trí hiện tại; khi tới lượt → `admitted:true` + `accessToken` (token
-  admission) để hạ nguồn cho phép đặt mua.
+- `captcha`: sinh con số ngẫu nhiên, vẽ ra ảnh PNG, lưu đáp án `wr:captcha:{id}` (TTL ngắn,
+  one-time). Client hiển thị ảnh, bắt người dùng nhập lại số.
+- `enqueue`: verify CAPTCHA (đối chiếu `captchaAnswer` với `wr:captcha:{captchaId}`) → ZADD vào
+  `wr:queue:{eventId}` (score = INCR `wr:seq` cho FIFO công bằng) → trả `token` + vị trí.
+- `status`: trả vị trí hiện tại; tới lượt → `admitted:true` + `accessToken` (PASS) để hạ nguồn
+  cho phép đặt mua; hết vé/hết hạn → `soldOut:true`.
+- `internal/admission/check`: Order verify PASS trước khi nhận `POST /api/order`.
+- `internal/.../rate` & `.../soldout`: Order/Inventory chỉnh nhịp thả per-event / báo hết vé.
+- `admin/config`: chỉnh cấu hình admission ĐỘNG từ trang admin (xem "Cấu hình động" bên dưới).
 
 ## Cơ chế admission (drip)
 ```
@@ -46,8 +61,22 @@ Khi flash sale bật, **Order/Gateway** yêu cầu `accessToken` admission hợp
 - Rate limit theo IP ở gateway cho route waitingroom.
 
 ## Config
-`server.port=8089`, Redis (HA). `waitingroom.admission.rate`, `*.token.ttl`,
-`*.admit.ttl`. Client: `InventoryClient` (đọc tồn). KHÔNG có PostgreSQL.
+`server.port=8089`, Redis (HA). `waitingroom.admission.rate`, `*.token-ttl`,
+`*.admit-ttl`, `*.tick`. Client: `InventoryClient` (đọc tồn). KHÔNG có PostgreSQL.
+Bảo mật: verify JWT để gác `/admin/**` (role ADMIN) — reactive `SecurityConfig`, KHÔNG dùng
+`common-security` (vốn chỉ cho servlet). `JWK_SET_URI` trỏ JWKS của Auth.
+
+## Cấu hình động — NGUỒN DUY NHẤT là Redis (chỉnh từ admin, KHÔNG redeploy)
+`rate`, `tokenTtlSeconds`, `admitTtlSeconds` sống ở Redis hash **`wr:config`** — đây là nguồn
+DUY NHẤT lúc chạy. `application.properties` chỉ là **giá trị seed lần đầu**: lúc khởi động
+`AdmissionConfigSeeder` ghi vào `wr:config` bằng `HSETNX` (chỉ field còn thiếu, KHÔNG đè giá trị
+admin). Sau đó mọi lần đọc lấy thẳng Redis, không merge lại properties → tránh "hai nơi". Nếu
+Redis bị flush, lần đọc kế tiếp tự seed lại từ properties.
+
+Admin sửa qua `PUT /api/waitingroom/admin/config` → bộ thả áp dụng ngay. Lưu Redis (KHÔNG
+PostgreSQL) để giữ đúng ràng buộc "Store chính: Redis" và để mọi replica thấy cùng một cấu hình.
+`tick` (chu kỳ bộ thả) KHÔNG lưu Redis — nhịp scheduler cố định ở properties, không phải knob
+nghiệp vụ. Per-event vẫn override `rate` qua `wr:rate:{eventId}` (ưu tiên cao hơn `wr:config`).
 
 ## Lưu ý triển khai
 - Làm sau khi luồng mua lõi đã chạy (cần biết throughput thật để đặt rate).

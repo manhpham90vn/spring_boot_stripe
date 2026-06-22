@@ -19,6 +19,7 @@ function logout() {
       <div class="sidebar__brand">Ticket<span>Hub</span> Admin</div>
       <RouterLink :to="{ name: 'events' }">🎫 Sự kiện</RouterLink>
       <RouterLink :to="{ name: 'venues' }">📍 Địa điểm</RouterLink>
+      <RouterLink :to="{ name: 'waiting-room' }">⏳ Waiting Room</RouterLink>
       <div class="sidebar__foot">
         <div>{{ authStore.state.user?.email }}</div>
         <div class="muted">{{ authStore.state.user?.role }}</div>

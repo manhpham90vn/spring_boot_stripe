@@ -7,6 +7,7 @@ import { catalog, orders } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { formatDateTime, formatMoney } from '../lib/format'
+import WaitingRoomGate from '../components/WaitingRoomGate'
 import type {
   EventDetailResponse,
   OrderResponse,
@@ -18,7 +19,8 @@ import type {
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
 const stripePromise: Promise<Stripe | null> | null = PUBLISHABLE_KEY ? loadStripe(PUBLISHABLE_KEY) : null
 
-type Phase = 'form' | 'pay' | 'result'
+// 'queue' = đang qua van waiting room (chỉ khi flash sale bật) trước khi tạo đơn.
+type Phase = 'form' | 'queue' | 'pay' | 'result'
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -37,6 +39,8 @@ export default function EventDetailPage() {
   const [order, setOrder] = useState<OrderResponse | null>(null)
   const [phase, setPhase] = useState<Phase>('form')
   const [orderError, setOrderError] = useState<string | null>(null)
+  // PASS waiting room cho sự kiện này (giữ suốt phiên mua, dùng lại cho mọi hạng vé cùng event).
+  const [admission, setAdmission] = useState<string | null>(null)
 
   // Số vé hiện chọn (SEATED = số ghế; GA = quantity) — dùng cho tạm tính & nút đặt.
   const count = selected?.kind === 'SEATED' ? selectedSeatIds.length : quantity
@@ -80,8 +84,18 @@ export default function EventDetailPage() {
     })
   }
 
-  async function placeOrder() {
+  // Bấm "Tiếp tục": chưa có PASS → qua van waiting room trước; có rồi → tạo đơn luôn.
+  function continueToBuy() {
+    if (admission) {
+      placeOrder(admission)
+    } else {
+      setPhase('queue')
+    }
+  }
+
+  async function placeOrder(admissionToken: string) {
     if (!event || !selected) return
+    setPhase('form')
     setPlacing(true)
     setOrderError(null)
     try {
@@ -89,7 +103,7 @@ export default function EventDetailPage() {
         selected.kind === 'SEATED'
           ? { eventId: event.id, ticketTypeId: selected.id, seatIds: selectedSeatIds }
           : { eventId: event.id, ticketTypeId: selected.id, quantity }
-      const o = await orders.place(req)
+      const o = await orders.place(req, admissionToken)
       setOrder(o)
       // Đã tạo PaymentIntent → sang bước nhập thẻ; ngược lại (REJECTED / lỗi tạo) → kết quả luôn.
       setPhase(o.status === 'AWAITING_PAYMENT' && o.clientSecret ? 'pay' : 'result')
@@ -158,6 +172,14 @@ export default function EventDetailPage() {
               Bạn cần <Link to="/login" style={{ color: 'var(--brand)' }}>đăng nhập</Link> để
               đặt vé.
             </p>
+          ) : phase === 'queue' ? (
+            <WaitingRoomGate
+              eventId={event.id}
+              onAdmitted={(accessToken) => {
+                setAdmission(accessToken)
+                placeOrder(accessToken)
+              }}
+            />
           ) : phase === 'pay' && order ? (
             <PaymentPanel
               order={order}
@@ -203,7 +225,7 @@ export default function EventDetailPage() {
                 className="btn btn--primary"
                 style={{ width: '100%' }}
                 disabled={placing || count < 1}
-                onClick={placeOrder}
+                onClick={continueToBuy}
               >
                 {placing
                   ? 'Đang tạo đơn…'

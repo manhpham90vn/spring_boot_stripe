@@ -24,10 +24,11 @@ interface RequestOptions {
   method?: string
   body?: unknown
   auth?: boolean // có gắn Bearer token không (mặc định: gắn nếu có token)
+  headers?: Record<string, string> // header bổ sung (vd PASS waiting room)
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...opts.headers }
   const token = getToken()
   if (token && opts.auth !== false) headers['Authorization'] = `Bearer ${token}`
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
@@ -59,7 +60,17 @@ async function extractError(res: Response): Promise<string> {
   }
 }
 
+/** Tải nhị phân (vd ảnh CAPTCHA) kèm header phản hồi — fetch trả cả blob lẫn header. */
+export async function getBlobWithHeaders(
+  path: string,
+): Promise<{ blob: Blob; headers: Headers }> {
+  const res = await fetch(path)
+  if (!res.ok) throw new ApiError(res.status, await extractError(res))
+  return { blob: await res.blob(), headers: res.headers }
+}
+
 export const http = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<T>(path, { method: 'POST', body, headers }),
 }

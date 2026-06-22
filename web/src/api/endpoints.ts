@@ -1,6 +1,7 @@
 // Các hàm gọi API theo nghiệp vụ. Path khớp quy ước /api/<service>/... của gateway.
-import { http, setToken } from './client'
+import { getBlobWithHeaders, http, setToken } from './client'
 import type {
+  EnqueueResponse,
   EventDetailResponse,
   EventSummaryResponse,
   OrderResponse,
@@ -9,6 +10,7 @@ import type {
   TicketResponse,
   TokenResponse,
   UserResponse,
+  WaitingStatusResponse,
 } from './types'
 
 export const auth = {
@@ -34,8 +36,29 @@ export const catalog = {
 }
 
 export const orders = {
-  place: (req: PlaceOrderRequest) => http.post<OrderResponse>('/api/order', req),
+  // admissionToken: PASS waiting room (nếu có) — gửi qua header để Order/Gateway verify khi flash sale.
+  place: (req: PlaceOrderRequest, admissionToken?: string) =>
+    http.post<OrderResponse>(
+      '/api/order',
+      req,
+      admissionToken ? { 'X-Admission-Token': admissionToken } : undefined,
+    ),
   get: (id: string) => http.get<OrderResponse>(`/api/order/${id}`),
+}
+
+// Waiting Room: van chặn spike. CAPTCHA → xếp hàng → poll vị trí → nhận PASS.
+export const waitingroom = {
+  // Lấy ảnh CAPTCHA; trả captchaId (header X-Captcha-Id) + objectURL để hiển thị <img>.
+  async captcha(): Promise<{ captchaId: string; imageUrl: string }> {
+    const { blob, headers } = await getBlobWithHeaders('/api/waitingroom/public/captcha')
+    return { captchaId: headers.get('X-Captcha-Id') ?? '', imageUrl: URL.createObjectURL(blob) }
+  },
+  enqueue: (eventId: string, body: { captchaId: string; captchaAnswer: string }) =>
+    http.post<EnqueueResponse>(`/api/waitingroom/public/${eventId}/enqueue`, body),
+  status: (eventId: string, token: string) =>
+    http.get<WaitingStatusResponse>(
+      `/api/waitingroom/public/${eventId}/status?token=${encodeURIComponent(token)}`,
+    ),
 }
 
 export const tickets = {
