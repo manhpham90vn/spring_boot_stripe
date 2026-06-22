@@ -1,9 +1,0 @@
-{
-  "java.import.maven.enabled": true,
-  "java.configuration.updateBuildConfiguration": "automatic",
-  "maven.pomfile.globPattern": "**/pom.xml",
-  "files.exclude": {
-    "**/target": true
-  },
-  "java.compile.nullAnalysis.mode": "automatic"
-}

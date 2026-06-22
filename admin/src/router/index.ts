@@ -6,7 +6,7 @@ import EventsView from '../views/EventsView.vue'
 import EventDetailView from '../views/EventDetailView.vue'
 
 const router = createRouter({
-  // BASE_URL = '/admin/' (xem vite.config base) → router khớp đúng đường dẫn con.
+  // BASE_URL theo vite.config (mặc định '/' vì admin chạy trên domain riêng).
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },

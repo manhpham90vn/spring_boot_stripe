@@ -199,6 +199,9 @@ services:
       "
 
   common-security-init:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
     image: ticketing-dev:latest
     container_name: ticketing-common-security-init
     restart: "no"
@@ -332,6 +335,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      common-security-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/order
@@ -379,6 +384,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      common-security-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ticket
