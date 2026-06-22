@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>com.manhpham</groupId>
+	<artifactId>ticketing-parent</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<packaging>pom</packaging>
+	<name>ticketing</name>
+	<description>
+		POM tổng (aggregator) build toàn bộ workspace bằng một lệnh. Mỗi module vẫn giữ
+		parent spring-boot-starter-parent riêng; reactor tự sắp thứ tự — libs/* build trước
+		các service phụ thuộc. Dùng: ./mvnw -DskipTests install
+	</description>
+
+	<modules>
+		<!-- Thư viện dùng chung (build trước) -->
+		<module>libs/common-core</module>
+		<module>libs/common-security</module>
+
+		<!-- Microservices -->
+		<module>apigateway</module>
+		<module>auth</module>
+		<module>catalog</module>
+		<module>inventory</module>
+		<module>order</module>
+		<module>payment</module>
+		<module>ticket</module>
+		<module>notification</module>
+		<module>waitingroom</module>
+	</modules>
+</project>
