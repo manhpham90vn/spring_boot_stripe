@@ -1,0 +1,3 @@
+# Build context chỉ cần Dockerfile — script .js được mount lúc run, không copy vào image.
+*
+!Dockerfile
