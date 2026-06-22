@@ -503,7 +503,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     container_name: ticketing-nginx
-    profiles: ["services"]
+    profiles: ["services", "tunnel"]
     restart: unless-stopped
     ports:
       - "80:80"

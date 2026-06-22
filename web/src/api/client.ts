@@ -1,5 +1,6 @@
-// HTTP client mỏng quanh fetch. Mọi request đi qua API Gateway dưới tiền tố /api.
-// Token JWT (nếu có) được gắn header Authorization. Lỗi HTTP ném ApiError để UI bắt.
+// HTTP client trên axios. Mọi request đi qua API Gateway dưới tiền tố /api.
+// Interceptor: gắn Bearer token; chuẩn hoá lỗi HTTP thành ApiError để UI bắt.
+import axios, { type AxiosError, type AxiosResponseHeaders } from 'axios'
 
 const TOKEN_KEY = 'tickethub.token'
 
@@ -20,57 +21,42 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions {
-  method?: string
-  body?: unknown
-  auth?: boolean // có gắn Bearer token không (mặc định: gắn nếu có token)
-  headers?: Record<string, string> // header bổ sung (vd PASS waiting room)
-}
+const api = axios.create()
 
-async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { ...opts.headers }
+// Gắn token (nếu có) cho mọi request.
+api.interceptors.request.use((config) => {
   const token = getToken()
-  if (token && opts.auth !== false) headers['Authorization'] = `Bearer ${token}`
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
 
-  const res = await fetch(path, {
-    method: opts.method ?? 'GET',
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  })
+// Chuẩn hoá lỗi → ApiError. 401 → xoá token (phiên hết hạn).
+api.interceptors.response.use(
+  (res) => res,
+  (error: AxiosError<{ message?: string; error?: string }>) => {
+    const res = error.response
+    if (!res) {
+      return Promise.reject(new ApiError(0, 'Không kết nối được máy chủ.'))
+    }
+    if (res.status === 401) {
+      setToken(null)
+      return Promise.reject(new ApiError(401, 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.'))
+    }
+    const msg = res.data?.message ?? res.data?.error ?? `Lỗi ${res.status}`
+    return Promise.reject(new ApiError(res.status, msg))
+  },
+)
 
-  if (res.status === 401) {
-    setToken(null)
-    throw new ApiError(401, 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.')
-  }
-  if (!res.ok) {
-    throw new ApiError(res.status, await extractError(res))
-  }
-  if (res.status === 204) return undefined as T
-  const text = await res.text()
-  return text ? (JSON.parse(text) as T) : (undefined as T)
-}
-
-async function extractError(res: Response): Promise<string> {
-  try {
-    const data = await res.json()
-    return data.message ?? data.error ?? `Lỗi ${res.status}`
-  } catch {
-    return `Lỗi ${res.status}`
-  }
-}
-
-/** Tải nhị phân (vd ảnh CAPTCHA) kèm header phản hồi — fetch trả cả blob lẫn header. */
+/** Tải nhị phân (vd ảnh CAPTCHA) kèm header phản hồi. */
 export async function getBlobWithHeaders(
   path: string,
-): Promise<{ blob: Blob; headers: Headers }> {
-  const res = await fetch(path)
-  if (!res.ok) throw new ApiError(res.status, await extractError(res))
-  return { blob: await res.blob(), headers: res.headers }
+): Promise<{ blob: Blob; headers: AxiosResponseHeaders }> {
+  const res = await api.get<Blob>(path, { responseType: 'blob' })
+  return { blob: res.data, headers: res.headers as AxiosResponseHeaders }
 }
 
 export const http = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string) => api.get<T>(path).then((r) => r.data),
   post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
-    request<T>(path, { method: 'POST', body, headers }),
+    api.post<T>(path, body, { headers }).then((r) => r.data),
 }

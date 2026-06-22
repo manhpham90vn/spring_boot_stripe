@@ -1,20 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { tickets as ticketsApi } from '../api/endpoints'
-import { ApiError, getToken } from '../api/client'
+import { ticketsApi } from '../api/tickets'
+import { getToken } from '../api/client'
+import { useTicketsStore } from '../stores/tickets'
+import { useAsync } from '../hooks/useAsync'
 import { formatDateTime } from '../lib/format'
-import type { TicketResponse } from '../api/types'
+import type { TicketResponse } from '../types/ticket'
 
 export default function MyTicketsPage() {
-  const [tickets, setTickets] = useState<TicketResponse[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    ticketsApi
-      .mine()
-      .then(setTickets)
-      .catch((e: ApiError) => setError(e.message))
-  }, [])
+  const tickets = useTicketsStore((s) => s.tickets)
+  const fetchMine = useTicketsStore((s) => s.fetchMine)
+  const { loading, error } = useAsync(() => fetchMine(), [fetchMine], 'Không tải được vé.')
 
   return (
     <>
@@ -22,15 +18,15 @@ export default function MyTicketsPage() {
       <p className="subtitle">Đưa mã QR này tại cổng để soát vé.</p>
 
       {error && <div className="alert">{error}</div>}
-      {!tickets && !error && <div className="spinner">Đang tải…</div>}
-      {tickets && tickets.length === 0 && (
+      {loading && tickets.length === 0 && !error && <div className="spinner">Đang tải…</div>}
+      {!loading && tickets.length === 0 && !error && (
         <p className="muted">
           Bạn chưa có vé nào. <Link to="/" style={{ color: 'var(--brand)' }}>Xem sự kiện</Link>.
         </p>
       )}
 
       <div className="grid">
-        {tickets?.map((t) => (
+        {tickets.map((t) => (
           <TicketCard key={t.id} ticket={t} />
         ))}
       </div>

@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
-import { ApiError } from '../api/client'
+import { useAuthStore } from '../stores/auth'
+import { errorMessage } from '../lib/errors'
 
 interface LocationState {
   from?: { pathname: string }
 }
 
 export default function LoginPage() {
-  const { login, register } = useAuth()
+  const login = useAuthStore((s) => s.login)
+  const register = useAuthStore((s) => s.register)
   const navigate = useNavigate()
   const location = useLocation()
   const from = (location.state as LocationState | null)?.from?.pathname ?? '/'
@@ -28,7 +29,7 @@ export default function LoginPage() {
       else await register(email, password)
       navigate(from, { replace: true })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Có lỗi xảy ra.')
+      setError(errorMessage(err))
     } finally {
       setBusy(false)
     }

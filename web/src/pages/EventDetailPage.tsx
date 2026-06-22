@@ -1,19 +1,18 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { loadStripe } from '@stripe/stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
-import { catalog, orders } from '../api/endpoints'
-import { ApiError } from '../api/client'
-import { useAuth } from '../auth/AuthContext'
+import { catalogApi } from '../api/catalog'
+import { ordersApi } from '../api/orders'
+import { useAuthStore } from '../stores/auth'
+import { useCatalogStore } from '../stores/catalog'
+import { useAsync } from '../hooks/useAsync'
+import { errorMessage } from '../lib/errors'
 import { formatDateTime, formatMoney } from '../lib/format'
 import WaitingRoomGate from '../components/WaitingRoomGate'
-import type {
-  EventDetailResponse,
-  OrderResponse,
-  SeatResponse,
-  TicketTypeResponse,
-} from '../api/types'
+import type { SeatResponse, TicketTypeResponse } from '../types/catalog'
+import type { OrderResponse } from '../types/order'
 
 // Khởi tạo Stripe MỘT LẦN (ngoài component) từ khoá publishable. Thiếu khoá → null (UI báo lỗi cấu hình).
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
@@ -24,9 +23,14 @@ type Phase = 'form' | 'queue' | 'pay' | 'result'
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { user } = useAuth()
-  const [event, setEvent] = useState<EventDetailResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const user = useAuthStore((s) => s.user)
+  const event = useCatalogStore((s) => s.currentEvent)
+  const fetchEvent = useCatalogStore((s) => s.fetchEvent)
+  const { loading, error } = useAsync(
+    () => fetchEvent(id!),
+    [id, fetchEvent],
+    'Không tải được sự kiện.',
+  )
 
   // Trạng thái đặt vé
   const [selected, setSelected] = useState<TicketTypeResponse | null>(null)
@@ -45,14 +49,6 @@ export default function EventDetailPage() {
   // Số vé hiện chọn (SEATED = số ghế; GA = quantity) — dùng cho tạm tính & nút đặt.
   const count = selected?.kind === 'SEATED' ? selectedSeatIds.length : quantity
 
-  useEffect(() => {
-    if (!id) return
-    catalog
-      .eventDetail(id)
-      .then(setEvent)
-      .catch((e: ApiError) => setError(e.message))
-  }, [id])
-
   function resetOrder() {
     setOrder(null)
     setPhase('form')
@@ -68,10 +64,10 @@ export default function EventDetailPage() {
     resetOrder()
     if (t.kind === 'SEATED' && event) {
       setSeatsLoading(true)
-      catalog
+      catalogApi
         .seats(event.id, t.id)
         .then(setSeats)
-        .catch((e: ApiError) => setOrderError(e.message))
+        .catch((e) => setOrderError(errorMessage(e)))
         .finally(() => setSeatsLoading(false))
     }
   }
@@ -103,19 +99,19 @@ export default function EventDetailPage() {
         selected.kind === 'SEATED'
           ? { eventId: event.id, ticketTypeId: selected.id, seatIds: selectedSeatIds }
           : { eventId: event.id, ticketTypeId: selected.id, quantity }
-      const o = await orders.place(req, admissionToken)
+      const o = await ordersApi.place(req, admissionToken)
       setOrder(o)
       // Đã tạo PaymentIntent → sang bước nhập thẻ; ngược lại (REJECTED / lỗi tạo) → kết quả luôn.
       setPhase(o.status === 'AWAITING_PAYMENT' && o.clientSecret ? 'pay' : 'result')
     } catch (e) {
-      setOrderError(e instanceof ApiError ? e.message : 'Đặt vé thất bại.')
+      setOrderError(errorMessage(e, 'Đặt vé thất bại.'))
     } finally {
       setPlacing(false)
     }
   }
 
   if (error) return <div className="alert">{error}</div>
-  if (!event) return <div className="spinner">Đang tải…</div>
+  if (loading || !event || event.id !== id) return <div className="spinner">Đang tải…</div>
 
   return (
     <>
@@ -244,11 +240,11 @@ export default function EventDetailPage() {
 /** Poll trạng thái đơn tới khi về trạng thái cuối (webhook chốt). Tối đa ~30s. */
 async function pollOrderUntilFinal(orderId: string): Promise<OrderResponse> {
   for (let i = 0; i < 20; i++) {
-    const o = await orders.get(orderId)
+    const o = await ordersApi.get(orderId)
     if (o.status === 'PAID' || o.status === 'PAYMENT_FAILED' || o.status === 'REJECTED') return o
     await new Promise((r) => setTimeout(r, 1500))
   }
-  return orders.get(orderId) // hết hạn poll: trả trạng thái mới nhất (UI hiện "đang xử lý")
+  return ordersApi.get(orderId) // hết hạn poll: trả trạng thái mới nhất (UI hiện "đang xử lý")
 }
 
 function PaymentPanel({

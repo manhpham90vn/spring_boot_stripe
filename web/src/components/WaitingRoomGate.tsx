@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { waitingroom } from '../api/endpoints'
-import { ApiError } from '../api/client'
+import { waitingRoomApi } from '../api/waitingroom'
+import { errorMessage } from '../lib/errors'
 
 // Van chặn spike: khách phải qua CAPTCHA → xếp hàng → tới lượt (nhận PASS) trước khi mua.
 // Khi được thả, gọi onAdmitted(accessToken) để mở khoá luồng đặt vé.
@@ -26,7 +26,7 @@ export default function WaitingRoomGate({
   const loadCaptcha = useCallback(() => {
     setError(null)
     setAnswer('')
-    waitingroom
+    waitingRoomApi
       .captcha()
       .then((c) => {
         setCaptcha((prev) => {
@@ -34,10 +34,12 @@ export default function WaitingRoomGate({
           return c
         })
       })
-      .catch((e: ApiError) => setError(e.message))
+      .catch((e) => setError(errorMessage(e)))
   }, [])
 
   useEffect(() => {
+    // Nạp CAPTCHA một lần khi mở gate (loadCaptcha ổn định nhờ useCallback).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadCaptcha()
   }, [loadCaptcha])
 
@@ -46,7 +48,7 @@ export default function WaitingRoomGate({
     setBusy(true)
     setError(null)
     try {
-      const res = await waitingroom.enqueue(eventId, {
+      const res = await waitingRoomApi.enqueue(eventId, {
         captchaId: captcha.captchaId,
         captchaAnswer: answer.trim(),
       })
@@ -55,7 +57,7 @@ export default function WaitingRoomGate({
       setEta(res.etaSeconds)
       setStage('queue')
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Không vào được hàng đợi.')
+      setError(errorMessage(e, 'Không vào được hàng đợi.'))
       loadCaptcha() // CAPTCHA dùng một lần → cấp ảnh mới để thử lại
     } finally {
       setBusy(false)
@@ -70,7 +72,7 @@ export default function WaitingRoomGate({
 
     async function tick() {
       try {
-        const s = await waitingroom.status(eventId, token!)
+        const s = await waitingRoomApi.status(eventId, token!)
         if (cancelled) return
         if (s.admitted && s.accessToken) {
           onAdmitted(s.accessToken)

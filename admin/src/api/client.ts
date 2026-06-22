@@ -1,4 +1,6 @@
-// HTTP client mỏng cho admin. Mọi request qua gateway dưới /api, gắn Bearer token.
+// HTTP client trên axios. Mọi request qua gateway dưới /api, gắn Bearer token.
+// Interceptor chuẩn hoá lỗi HTTP thành ApiError để UI bắt.
+import axios, { type AxiosError } from 'axios'
 
 const TOKEN_KEY = 'tickethub.admin.token'
 
@@ -19,48 +21,36 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions {
-  method?: string
-  body?: unknown
-}
+const api = axios.create()
 
-async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = {}
+api.interceptors.request.use((config) => {
   const token = getToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
 
-  const res = await fetch(path, {
-    method: opts.method ?? 'GET',
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  })
-
-  if (res.status === 401) {
-    setToken(null)
-    throw new ApiError(401, 'Phiên đã hết hạn, đăng nhập lại.')
-  }
-  if (res.status === 403) {
-    throw new ApiError(403, 'Tài khoản không có quyền ADMIN.')
-  }
-  if (!res.ok) throw new ApiError(res.status, await extractError(res))
-  if (res.status === 204) return undefined as T
-  const text = await res.text()
-  return text ? (JSON.parse(text) as T) : (undefined as T)
-}
-
-async function extractError(res: Response): Promise<string> {
-  try {
-    const data = await res.json()
-    return data.message ?? data.error ?? `Lỗi ${res.status}`
-  } catch {
-    return `Lỗi ${res.status}`
-  }
-}
+api.interceptors.response.use(
+  (res) => res,
+  (error: AxiosError<{ message?: string; error?: string }>) => {
+    const res = error.response
+    if (!res) {
+      return Promise.reject(new ApiError(0, 'Không kết nối được máy chủ.'))
+    }
+    if (res.status === 401) {
+      setToken(null)
+      return Promise.reject(new ApiError(401, 'Phiên đã hết hạn, đăng nhập lại.'))
+    }
+    if (res.status === 403) {
+      return Promise.reject(new ApiError(403, 'Tài khoản không có quyền ADMIN.'))
+    }
+    const msg = res.data?.message ?? res.data?.error ?? `Lỗi ${res.status}`
+    return Promise.reject(new ApiError(res.status, msg))
+  },
+)
 
 export const http = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
-  put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
-  del: (path: string) => request<void>(path, { method: 'DELETE' }),
+  get: <T>(path: string) => api.get<T>(path).then((r) => r.data),
+  post: <T>(path: string, body?: unknown) => api.post<T>(path, body).then((r) => r.data),
+  put: <T>(path: string, body?: unknown) => api.put<T>(path, body).then((r) => r.data),
+  del: (path: string) => api.delete(path).then(() => undefined),
 }

@@ -1,20 +1,12 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { catalog } from '../api/endpoints'
-import { ApiError } from '../api/client'
+import { useCatalogStore } from '../stores/catalog'
+import { useAsync } from '../hooks/useAsync'
 import { formatDateTime } from '../lib/format'
-import type { EventSummaryResponse } from '../api/types'
 
 export default function EventsPage() {
-  const [events, setEvents] = useState<EventSummaryResponse[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    catalog
-      .listEvents()
-      .then(setEvents)
-      .catch((e: ApiError) => setError(e.message))
-  }, [])
+  const events = useCatalogStore((s) => s.events)
+  const fetchEvents = useCatalogStore((s) => s.fetchEvents)
+  const { loading, error } = useAsync(() => fetchEvents(), [fetchEvents], 'Không tải được sự kiện.')
 
   return (
     <>
@@ -22,11 +14,13 @@ export default function EventsPage() {
       <p className="subtitle">Chọn một sự kiện để xem hạng vé và đặt mua.</p>
 
       {error && <div className="alert">{error}</div>}
-      {!events && !error && <div className="spinner">Đang tải sự kiện…</div>}
-      {events && events.length === 0 && <p className="muted">Chưa có sự kiện nào.</p>}
+      {loading && events.length === 0 && !error && (
+        <div className="spinner">Đang tải sự kiện…</div>
+      )}
+      {!loading && events.length === 0 && !error && <p className="muted">Chưa có sự kiện nào.</p>}
 
       <div className="grid">
-        {events?.map((e) => (
+        {events.map((e) => (
           <Link key={e.id} to={`/events/${e.id}`} className="card">
             <div className="row" style={{ justifyContent: 'space-between' }}>
               <h3 className="card__title">{e.title}</h3>
