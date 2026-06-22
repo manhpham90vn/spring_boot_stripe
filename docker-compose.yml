@@ -514,10 +514,15 @@ services:
     <<: *fe
     container_name: ticketing-web
     profiles: ["frontend"]
-    command: sh -c "pnpm install && pnpm dev --host 0.0.0.0 --port 5173"
+    command: sh -c "pnpm install --frozen-lockfile --filter web... && pnpm --filter web dev --host 0.0.0.0 --port 5173"
     volumes:
-      - ./web:/app
-      - web-node-modules:/app/node_modules
+      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml:ro
+      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
+      - ./package.json:/app/package.json:ro
+      - ./admin/package.json:/app/admin/package.json:ro
+      - ./web:/app/web
+      - web-root-modules:/app/node_modules
+      - web-node-modules:/app/web/node_modules
     ports:
       - "5173:5173"
 
@@ -525,10 +530,15 @@ services:
     <<: *fe
     container_name: ticketing-admin
     profiles: ["frontend"]
-    command: sh -c "pnpm install && pnpm dev --host 0.0.0.0 --port 5174"
+    command: sh -c "pnpm install --frozen-lockfile --filter admin... && pnpm --filter admin dev --host 0.0.0.0 --port 5174"
     volumes:
-      - ./admin:/app
-      - admin-node-modules:/app/node_modules
+      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml:ro
+      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
+      - ./package.json:/app/package.json:ro
+      - ./web/package.json:/app/web/package.json:ro
+      - ./admin:/app/admin
+      - admin-root-modules:/app/node_modules
+      - admin-node-modules:/app/admin/node_modules
     ports:
       - "5174:5174"
 
@@ -547,7 +557,9 @@ networks:
 
 volumes:
   maven-cache:
+  web-root-modules:
   web-node-modules:
+  admin-root-modules:
   admin-node-modules:
   postgres-data:
   redis-data:
