@@ -2,6 +2,7 @@ package com.manhpham.waitingroom.services;
 
 import com.manhpham.waitingroom.dto.EnqueueRequest;
 import com.manhpham.waitingroom.dto.EnqueueResponse;
+import com.manhpham.waitingroom.dto.EventStats;
 import com.manhpham.waitingroom.dto.StatusResponse;
 import reactor.core.publisher.Mono;
 
@@ -30,4 +31,10 @@ public interface WaitingRoomService {
 
     /** Các eventId đang có hàng (AdmissionJob duyệt). */
     reactor.core.publisher.Flux<UUID> activeEvents();
+
+    /** Thống kê hàng chờ 1 event cho trang admin (đang chờ, đã thả, nhịp, ETA, sold-out). */
+    Mono<EventStats> stats(UUID eventId);
+
+    /** Thống kê tất cả event đang có hàng — dashboard tổng quan cho admin. */
+    reactor.core.publisher.Flux<EventStats> allStats();
 }

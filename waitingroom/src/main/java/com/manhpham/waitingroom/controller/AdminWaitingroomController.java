@@ -1,16 +1,22 @@
 package com.manhpham.waitingroom.controller;
 
 import com.manhpham.waitingroom.dto.AdmissionConfig;
+import com.manhpham.waitingroom.dto.EventStats;
 import com.manhpham.waitingroom.services.AdmissionConfigService;
+import com.manhpham.waitingroom.services.WaitingRoomService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.util.UUID;
 
 /**
  * API QUẢN TRỊ ({@code /api/waitingroom/admin/**}): chỉnh cấu hình admission ĐỘNG từ trang admin
@@ -22,11 +28,24 @@ import reactor.core.publisher.Mono;
 public class AdminWaitingroomController {
 
     private final AdmissionConfigService config;
+    private final WaitingRoomService waitingRoom;
 
     /** Cấu hình admission hiện hành (Redis override + mặc định). */
     @GetMapping("/config")
     public Mono<AdmissionConfig> get() {
         return config.current();
+    }
+
+    /** Tổng quan tất cả event đang có hàng chờ — dashboard admin. */
+    @GetMapping("/stats")
+    public Flux<EventStats> stats() {
+        return waitingRoom.allStats();
+    }
+
+    /** Chi tiết hàng chờ của 1 event (đang chờ, tổng đã thả, nhịp, ETA, sold-out). */
+    @GetMapping("/stats/{eventId}")
+    public Mono<EventStats> stats(@PathVariable UUID eventId) {
+        return waitingRoom.stats(eventId);
     }
 
     /** Cập nhật cấu hình admission. */

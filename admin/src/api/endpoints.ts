@@ -1,6 +1,7 @@
 import { http, setToken } from './client'
 import type {
   AdmissionConfig,
+  EventStats,
   EventDetailResponse,
   EventPayload,
   EventStatus,
@@ -47,6 +48,10 @@ export const waitingroom = {
   getConfig: () => http.get<AdmissionConfig>('/api/waitingroom/admin/config'),
   updateConfig: (p: AdmissionConfig) =>
     http.put<AdmissionConfig>('/api/waitingroom/admin/config', p),
+  // Thống kê hàng chờ: tất cả event đang có hàng, hoặc chi tiết 1 event.
+  stats: () => http.get<EventStats[]>('/api/waitingroom/admin/stats'),
+  eventStats: (eventId: string) =>
+    http.get<EventStats>(`/api/waitingroom/admin/stats/${eventId}`),
 }
 
 export const ticketTypes = {

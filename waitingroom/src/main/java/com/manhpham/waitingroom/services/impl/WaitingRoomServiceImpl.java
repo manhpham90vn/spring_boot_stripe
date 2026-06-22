@@ -5,6 +5,7 @@ import com.manhpham.waitingroom.client.InventoryClient;
 import com.manhpham.waitingroom.services.AdmissionConfigService;
 import com.manhpham.waitingroom.dto.EnqueueRequest;
 import com.manhpham.waitingroom.dto.EnqueueResponse;
+import com.manhpham.waitingroom.dto.EventStats;
 import com.manhpham.waitingroom.dto.StatusResponse;
 import com.manhpham.waitingroom.services.WaitingRoomService;
 import com.manhpham.waitingroom.utils.exception.CaptchaFailedException;
@@ -30,6 +31,7 @@ import java.util.UUID;
  *   wr:admit:{eventId}:{token}      STR   (TTL) — PASS "đã được vào", cho phép /api/order
  *   wr:rate:{eventId}               INT   nhịp thả/giây (override mặc định)
  *   wr:soldout:{eventId}            STR   cờ hết vé → ngừng thả
+ *   wr:stats:admitted:{eventId}     INT   TỔNG đã thả (cộng dồn) — chỉ phục vụ thống kê admin
  * </pre>
  */
 @Service
@@ -49,6 +51,7 @@ public class WaitingRoomServiceImpl implements WaitingRoomService {
     private static String tokenKey(String token)  { return "wr:token:" + token; }
     private static String rateKey(UUID eventId)   { return "wr:rate:" + eventId; }
     private static String soldOutKey(UUID eventId){ return "wr:soldout:" + eventId; }
+    private static String admittedStatKey(UUID eventId) { return "wr:stats:admitted:" + eventId; }
     private static String admitKey(UUID eventId, String token) { return "wr:admit:" + eventId + ":" + token; }
 
     @Override
@@ -131,6 +134,27 @@ public class WaitingRoomServiceImpl implements WaitingRoomService {
         return redis.opsForSet().members(EVENTS).map(UUID::fromString);
     }
 
+    @Override
+    public Mono<EventStats> stats(UUID eventId) {
+        Mono<Long> waiting = redis.opsForZSet().size(queueKey(eventId)).defaultIfEmpty(0L);
+        Mono<Long> admitted = redis.opsForValue().get(admittedStatKey(eventId))
+                .map(Long::parseLong).defaultIfEmpty(0L);
+        Mono<Boolean> soldOut = redis.hasKey(soldOutKey(eventId));
+        return Mono.zip(waiting, admitted, effectiveRate(eventId), soldOut)
+                .map(t -> new EventStats(
+                        eventId.toString(),
+                        t.getT1(),                 // đang chờ
+                        t.getT2(),                 // tổng đã thả
+                        t.getT3(),                 // nhịp thả hiệu lực
+                        eta(t.getT1(), t.getT3()), // ETA rút cạn hàng
+                        t.getT4()));               // sold-out
+    }
+
+    @Override
+    public Flux<EventStats> allStats() {
+        return activeEvents().flatMap(this::stats);
+    }
+
     /** Lấy top-N (ZPOPMIN) khỏi hàng → cấp PASS (wr:admit, có TTL). Trả số token vừa thả. */
     private Mono<Long> drip(UUID eventId, int rate) {
         return config.admitTtl().flatMap(admitTtl -> redis.opsForZSet().popMin(queueKey(eventId), rate)
@@ -140,6 +164,10 @@ public class WaitingRoomServiceImpl implements WaitingRoomService {
                         .set(admitKey(eventId, token), "1", admitTtl)
                         .thenReturn(token))
                 .count()
+                // Cộng dồn TỔNG đã thả để admin thống kê (chỉ tăng khi thực sự thả được người).
+                .flatMap(n -> n > 0
+                        ? redis.opsForValue().increment(admittedStatKey(eventId), n).thenReturn(n)
+                        : Mono.just(n))
                 .doOnNext(n -> { if (n > 0) log.debug("Event {} thả {} người", eventId, n); }));
     }
 
