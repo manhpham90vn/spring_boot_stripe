@@ -8,15 +8,33 @@
 
 ## 1. Yêu cầu
 - Docker + Docker Compose v2 (`docker compose ...`).
-- Cổng trống: 80, 1025, 5432, 6379, 8025, 8080–8089, 9000–9001, 9092 (xem §3).
+- Cổng trống: 80, 1025, 5432, 5540, 6379, 8025, 8080–8092, 9000–9001, 9092, và 5173–5174
+  (FE) (xem §3).
 - Lần đầu build image dev + tải dependency Maven → **chậm** (mỗi service `start_period: 120s`
   vì compile khi khởi động). Kiên nhẫn ở lần `up` đầu tiên.
 
 ## 2. Khởi động
+
+Compose chia theo **profile** (không có profile nào mặc định → `docker compose up` trơ
+trọi sẽ không dựng gì). Bật đúng nhóm cần:
+
+| Profile | File | Nội dung |
+|---------|------|----------|
+| `db` | `docker-compose.yml` | hạ tầng lưu trữ: postgres, redis, kafka, minio(+init), mailpit |
+| `services` | `docker-compose.yml` | init containers + Debezium connect + 9 service + nginx (**tự kéo `db` lên cùng**) |
+| `frontend` | `docker-compose.yml` | web (React :5173) + admin (Vue :5174), vite dev |
+| `tunnel` | `docker-compose.yml` | cloudflared (chạy kèm `services`) |
+| `tools` | `docker-compose.tools.yml` | UI quản lý: pgweb, RedisInsight, kafka-ui, swagger-ui |
+
 ```bash
-docker compose up -d          # dựng toàn bộ (hạ tầng + 9 service)
-docker compose ps             # xem trạng thái (chờ tất cả healthy)
-docker compose logs -f auth   # theo dõi log một service
+docker compose --profile services up -d                       # backend đầy đủ (kèm hạ tầng)
+docker compose --profile db up -d                             # chỉ hạ tầng
+docker compose --profile services --profile frontend up -d    # backend + FE
+docker compose ps                                             # xem trạng thái (chờ healthy)
+docker compose logs -f auth                                   # theo dõi log một service
+
+# Tools quản lý (join network của stack chính → bật SAU khi stack đã chạy):
+docker compose -f docker-compose.tools.yml --profile tools up -d
 ```
 
 **Thứ tự init tự động** (các container one-shot, `restart: "no"`):
@@ -44,8 +62,9 @@ docker compose logs -f auth   # theo dõi log một service
 | catalog | :8082 | |
 | inventory · order | :8083 · :8084 | luồng mua chạy e2e |
 | payment · ticket | :8086 · :8087 | payment: chuyển sang Stripe thật (bỏ mock) |
-| notification · waitingroom | :8088 · :8089 | notification: consumer Kafka + DB dedup · waitingroom: chưa dựng |
-| **Swagger UI** | http://localhost/swagger | Gom OpenAPI mọi service |
+| notification · waitingroom | :8088 · :8089 | notification: consumer Kafka + DB dedup |
+| **web (storefront)** | http://localhost:5173 | React + vite dev (profile `frontend`); proxy `/api` → apigateway |
+| **admin** | http://localhost:5174 | Vue + vite dev (profile `frontend`); proxy `/api` → apigateway |
 | **Mailpit** (xem mail dev) | http://localhost:8025 | SMTP nhận ở :1025 |
 | **MinIO console** | http://localhost:9001 | user/pass: `minioadmin`/`minioadmin`; API :9000 |
 | **Kafka Connect REST** | http://localhost:8085 | trạng thái Debezium connector |
@@ -53,6 +72,15 @@ docker compose logs -f auth   # theo dõi log một service
 | PostgreSQL | :5432 | user/pass/db: `app`/`app` (mỗi service một DB) |
 | Redis | :6379 | |
 | Kafka | :9092 | |
+
+**Tools quản lý** (`docker-compose.tools.yml`, profile `tools`):
+
+| Công cụ | URL | Ghi chú |
+|---------|-----|---------|
+| **Swagger UI** | http://localhost:8092/swagger | Gom OpenAPI mọi service; cũng vào được qua nginx http://localhost/swagger |
+| **pgweb** (Postgres) | http://localhost:8091 | Chế độ sessions: tự nhập DB — host `postgres`, port `5432`, user/pass `app`/`app` |
+| **RedisInsight** | http://localhost:5540 | Thêm host `redis:6379` |
+| **kafka-ui** | http://localhost:8090 | Topic + Debezium connect (cluster `ticketing`) |
 
 ### Webhook Stripe vào máy dev — 2 cách
 - **`stripe listen`** (nhanh, không cần public URL): `stripe listen --forward-to localhost/webhooks/stripe`
@@ -126,9 +154,13 @@ curl -s http://localhost/api/catalog/public/events
 
 ## 8. Dọn dẹp
 ```bash
-docker compose down            # dừng, giữ volume (DB/Redis/Kafka còn dữ liệu)
+docker compose down            # dừng stack chính, giữ volume (DB/Redis/Kafka còn dữ liệu)
 docker compose down -v         # xoá sạch cả volume (reset hoàn toàn)
+docker compose -f docker-compose.tools.yml down   # dừng nhóm tools (file riêng)
 ```
+> `docker compose down` xoá mọi container của project bất kể profile. Tools nằm ở project
+> riêng (`ticketing-tools`) nên phải `down` bằng file của nó; network `ticketing-net` chỉ
+> biến mất khi stack chính `down`.
 > Xoá volume sẽ mất DB + offset Kafka + slot. Lần `up` sau, `connect-init` đăng ký lại
 > connector; outbox bắt đầu lại từ rỗng (`snapshot.mode=never`).
 

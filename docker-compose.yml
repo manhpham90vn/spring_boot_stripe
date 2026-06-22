@@ -1,11 +1,41 @@
 name: ticketing-infra
 
+# ---------------------------------------------------------------------------
+# Compose được chia theo PROFILE để bật/tắt từng nhóm độc lập:
+#   db        -> hạ tầng lưu trữ: postgres, redis, kafka, minio, mailpit
+#   services  -> init containers + Debezium connect + toàn bộ Spring service + nginx
+#   frontend  -> web (React) + admin (Vue), chạy vite dev
+#   tunnel    -> cloudflared (expose public, optional)
+#
+# Compose v2.20+ tự kéo dependency ở profile khác lên qua depends_on, nên chỉ
+# cần bật profile của thứ mình muốn:
+#   docker compose --profile db up -d                  # chỉ hạ tầng
+#   docker compose --profile services up -d            # service (tự bật db)
+#   docker compose --profile services --profile frontend up -d
+#   docker compose --profile services --profile frontend --profile tunnel up -d
+#
+# Tools quản lý hạ tầng (swagger-ui, adminer, kafka-ui, redis-commander) nằm ở
+# file riêng cho gọn:
+#   docker compose -f docker-compose.tools.yml --profile tools up -d
+# ---------------------------------------------------------------------------
+
 x-app: &app
   restart: unless-stopped
   build:
     context: .
     dockerfile: infra/docker/Dockerfile
   image: ticketing-dev:latest
+
+x-fe: &fe
+  restart: unless-stopped
+  build:
+    context: .
+    dockerfile: infra/docker/Dockerfile.node
+  image: ticketing-node:latest
+  working_dir: /app
+  environment:
+    # Vite dev proxy /api -> apigateway (cửa vào nghiệp vụ duy nhất), qua DNS nội bộ.
+    API_TARGET: http://apigateway:8080
 
 x-spring-env: &spring-env
   SPRING_DATASOURCE_USERNAME: ${DB_USER:-app}
@@ -21,9 +51,13 @@ x-app-healthcheck: &app-healthcheck
   start_period: 120s
 
 services:
+  # ========================================================================
+  # Profile: db — hạ tầng lưu trữ / message broker
+  # ========================================================================
   postgres:
     image: postgres:16-alpine
     container_name: ticketing-postgres
+    profiles: ["db", "services"]
     restart: unless-stopped
     command:
       - "postgres"
@@ -53,6 +87,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ticketing-redis
+    profiles: ["db", "services"]
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
@@ -68,6 +103,7 @@ services:
   kafka:
     image: apache/kafka:3.8.0
     container_name: ticketing-kafka
+    profiles: ["db", "services"]
     restart: unless-stopped
     ports:
       - "9092:9092"
@@ -93,9 +129,59 @@ services:
       timeout: 10s
       retries: 10
 
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ticketing-mailpit
+    profiles: ["db", "services"]
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    volumes:
+      - mailpit-data:/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: ticketing-minio
+    profiles: ["db", "services"]
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: ticketing-minio-init
+    profiles: ["db", "services"]
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do echo 'waiting for MinIO...'; sleep 2; done &&
+      mc mb -p local/event-images &&
+      mc mb -p local/ticket-qr &&
+      mc anonymous set download local/event-images &&
+      echo 'buckets ready';
+      "
+
+  # ========================================================================
+  # Profile: services — init containers, CDC, Spring services, edge nginx
+  # ========================================================================
   connect:
     image: quay.io/debezium/connect:2.7
     container_name: ticketing-connect
+    profiles: ["services"]
     restart: unless-stopped
     depends_on:
       kafka:
@@ -125,6 +211,7 @@ services:
   connect-init:
     image: curlimages/curl:latest
     container_name: ticketing-connect-init
+    profiles: ["services"]
     restart: "no"
     depends_on:
       connect:
@@ -155,55 +242,13 @@ services:
         done
         exit $$rc
 
-  mailpit:
-    image: axllent/mailpit:latest
-    container_name: ticketing-mailpit
-    restart: unless-stopped
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-    environment:
-      MP_DATABASE: /data/mailpit.db
-      MP_SMTP_AUTH_ACCEPT_ANY: "true"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
-    volumes:
-      - mailpit-data:/data
-
-  minio:
-    image: minio/minio:latest
-    container_name: ticketing-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio-data:/data
-
-  minio-init:
-    image: minio/mc:latest
-    container_name: ticketing-minio-init
-    depends_on:
-      minio:
-        condition: service_started
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin; do echo 'waiting for MinIO...'; sleep 2; done &&
-      mc mb -p local/event-images &&
-      mc mb -p local/ticket-qr &&
-      mc anonymous set download local/event-images &&
-      echo 'buckets ready';
-      "
-
   common-security-init:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile
     image: ticketing-dev:latest
     container_name: ticketing-common-security-init
+    profiles: ["services"]
     restart: "no"
     volumes:
       - ./libs/common-security:/workspace
@@ -216,15 +261,40 @@ services:
       dockerfile: infra/docker/Dockerfile
     image: ticketing-dev:latest
     container_name: ticketing-common-core-init
+    profiles: ["services"]
     restart: "no"
     volumes:
       - ./libs/common-core:/workspace
       - maven-cache:/home/app/.m2
     entrypoint: ["sh", "-c", "./mvnw -B -ntp install -DskipTests"]
 
+  jwt-keys-init:
+    image: alpine:3.20
+    container_name: ticketing-jwt-keys-init
+    profiles: ["services"]
+    restart: "no"
+    volumes:
+      - ./infra/keys:/keys
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache openssl >/dev/null
+        if [ -f /keys/jwt-private.pem ] && [ -f /keys/jwt-public.pem ]; then
+          echo 'JWT keys already present, skipping.'
+        else
+          echo 'Generating RSA JWT key pair...'
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /keys/jwt-private.pem
+          openssl pkey -in /keys/jwt-private.pem -pubout -out /keys/jwt-public.pem
+          chmod 644 /keys/jwt-private.pem /keys/jwt-public.pem
+          echo 'JWT keys generated.'
+        fi
+
   apigateway:
     <<: *app
     container_name: ticketing-apigateway
+    profiles: ["services"]
     depends_on:
       redis:
         condition: service_healthy
@@ -247,31 +317,10 @@ services:
       <<: *app-healthcheck
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
 
-  jwt-keys-init:
-    image: alpine:3.20
-    container_name: ticketing-jwt-keys-init
-    restart: "no"
-    volumes:
-      - ./infra/keys:/keys
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        apk add --no-cache openssl >/dev/null
-        if [ -f /keys/jwt-private.pem ] && [ -f /keys/jwt-public.pem ]; then
-          echo 'JWT keys already present, skipping.'
-        else
-          echo 'Generating RSA JWT key pair...'
-          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /keys/jwt-private.pem
-          openssl pkey -in /keys/jwt-private.pem -pubout -out /keys/jwt-public.pem
-          chmod 644 /keys/jwt-private.pem /keys/jwt-public.pem
-          echo 'JWT keys generated.'
-        fi
-
   auth:
     <<: *app
     container_name: ticketing-auth
+    profiles: ["services"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -297,6 +346,7 @@ services:
   catalog:
     <<: *app
     container_name: ticketing-catalog
+    profiles: ["services"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -324,6 +374,7 @@ services:
   inventory:
     <<: *app
     container_name: ticketing-inventory
+    profiles: ["services"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -348,6 +399,7 @@ services:
   order:
     <<: *app
     container_name: ticketing-order
+    profiles: ["services"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -377,6 +429,7 @@ services:
   payment:
     <<: *app
     container_name: ticketing-payment
+    profiles: ["services"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -401,6 +454,7 @@ services:
   ticket:
     <<: *app
     container_name: ticketing-ticket
+    profiles: ["services"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -428,6 +482,7 @@ services:
   notification:
     <<: *app
     container_name: ticketing-notification
+    profiles: ["services"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -452,6 +507,7 @@ services:
   waitingroom:
     <<: *app
     container_name: ticketing-waitingroom
+    profiles: ["services"]
     depends_on:
       redis:
         condition: service_healthy
@@ -472,41 +528,58 @@ services:
       <<: *app-healthcheck
       test: ["CMD-SHELL", "curl -sf http://localhost:8089/actuator/health || exit 1"]
 
-  swagger-ui:
-    image: swaggerapi/swagger-ui:latest
-    container_name: ticketing-swagger-ui
-    restart: unless-stopped
-    environment:
-      BASE_URL: /swagger
-      URLS_PRIMARY_NAME: catalog
-      URLS: >-
-        [
-          {"name": "auth", "url": "/api-docs/auth"},
-          {"name": "catalog", "url": "/api-docs/catalog"},
-          {"name": "inventory", "url": "/api-docs/inventory"},
-          {"name": "order", "url": "/api-docs/order"},
-          {"name": "payment", "url": "/api-docs/payment"},
-          {"name": "ticket", "url": "/api-docs/ticket"},
-          {"name": "notification", "url": "/api-docs/notification"},
-          {"name": "waitingroom", "url": "/api-docs/waitingroom"}
-        ]
-
   nginx:
     image: nginx:1.27-alpine
     container_name: ticketing-nginx
+    profiles: ["services"]
     restart: unless-stopped
     ports:
       - "80:80"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
 
+  # ========================================================================
+  # Profile: frontend — web (React) + admin (Vue), vite dev server
+  # ========================================================================
+  web:
+    <<: *fe
+    container_name: ticketing-web
+    profiles: ["frontend"]
+    # pnpm install rồi chạy vite, bind 0.0.0.0 để truy cập từ host.
+    command: sh -c "pnpm install && pnpm dev --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./web:/app
+      - web-node-modules:/app/node_modules
+    ports:
+      - "5173:5173"
+
+  admin:
+    <<: *fe
+    container_name: ticketing-admin
+    profiles: ["frontend"]
+    command: sh -c "pnpm install && pnpm dev --host 0.0.0.0 --port 5174"
+    volumes:
+      - ./admin:/app
+      - admin-node-modules:/app/node_modules
+    ports:
+      - "5174:5174"
+
+  # ========================================================================
+  # Profile: tunnel — cloudflared (expose public, optional)
+  # ========================================================================
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: ticketing-cloudflared
+    profiles: ["tunnel"]
     restart: unless-stopped
     depends_on:
       - nginx
     command: tunnel --no-autoupdate --url http://nginx:80
+
+# Network có tên cố định để docker-compose.tools.yml join vào (external).
+networks:
+  default:
+    name: ticketing-net
 
 volumes:
   maven-cache:
