@@ -1,11 +1,15 @@
-package com.manhpham.catalog.utils.response;
+package com.manhpham.common.core.response;
 
 import java.time.Instant;
 import java.util.Map;
 
 /**
- * Khuôn lỗi THỐNG NHẤT của Catalog (giống ý tưởng ApiError ở Auth). Trả lỗi theo cấu trúc
- * cố định để client parse/hiển thị nhất quán. {@code fieldErrors} chỉ dùng cho lỗi validate.
+ * Khuôn lỗi THỐNG NHẤT cho mọi lỗi đã được xử lý (xem GlobalExceptionHandler của từng service).
+ * Trả lỗi theo một cấu trúc cố định giúp phía client (web/app) parse và hiển thị nhất quán
+ * trên TOÀN hệ thống.
+ *
+ * <p>{@code fieldErrors} chỉ có giá trị với lỗi validate (map field → thông điệp); các
+ * lỗi khác để null và Jackson sẽ tự bỏ qua nếu cấu hình bỏ field null.
  */
 public record ApiError(
         Instant timestamp,
@@ -19,7 +23,7 @@ public record ApiError(
         return new ApiError(Instant.now(), status, error, message, null);
     }
 
-    /** Lỗi validate — kèm map các field bị sai và lý do. */
+    /** Lỗi validate — kèm theo map các field bị sai và lý do. */
     public static ApiError validation(int status, String error, String message, Map<String, String> fieldErrors) {
         return new ApiError(Instant.now(), status, error, message, fieldErrors);
     }

@@ -21,12 +21,14 @@ docker compose logs -f auth   # theo dõi log một service
 
 **Thứ tự init tự động** (các container one-shot, `restart: "no"`):
 1. `jwt-keys-init` — sinh cặp khoá RSA vào `infra/keys/` (nếu chưa có) cho Auth ký JWT.
-2. `common-security-init` — `mvn install` module `common-security` vào maven-cache để
+2. `common-security-init` — `mvn install` module `libs/common-security` vào maven-cache để
    các service servlet dùng được.
-3. `postgres` init — tạo các DB `auth, catalog, inventory, order, payment, ticket,
+3. `common-core-init` — `mvn install` module `libs/common-core` (model dùng chung:
+   `OutboxEvent`, `ApiError`, event payload) vào maven-cache cho các service phụ thuộc.
+4. `postgres` init — tạo các DB `auth, catalog, inventory, order, payment, ticket,
    notification` (`infra/postgres/init/01-create-databases.sql`).
-4. `minio-init` — tạo bucket `event-images`, `ticket-qr`.
-5. `connect-init` — đăng ký **mọi** connector Debezium trong `infra/debezium/*.json`
+5. `minio-init` — tạo bucket `event-images`, `ticket-qr`.
+6. `connect-init` — đăng ký **mọi** connector Debezium trong `infra/debezium/*.json`
    (xem [`outbox-debezium.md`](../standards/outbox-debezium.md)).
 
 > **Postgres bật logical replication** (`wal_level=logical`, slots) cho Debezium — đã cấu

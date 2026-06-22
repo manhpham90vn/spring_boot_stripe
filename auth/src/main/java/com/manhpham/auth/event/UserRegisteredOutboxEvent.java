@@ -1,6 +1,7 @@
 package com.manhpham.auth.event;
 
-import com.manhpham.auth.core.dto.OutboxEvent;
+import com.manhpham.common.core.dto.OutboxEvent;
+import com.manhpham.common.core.event.UserRegisteredEvent;
 
 /**
  * Bọc {@link UserRegisteredEvent} thành một bản ghi outbox cụ thể: gắn payload nghiệp vụ

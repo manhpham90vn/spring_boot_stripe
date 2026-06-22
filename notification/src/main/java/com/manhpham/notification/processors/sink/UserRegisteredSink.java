@@ -3,7 +3,7 @@ package com.manhpham.notification.processors.sink;
 import java.util.function.Consumer;
 
 import com.manhpham.notification.entities.NotificationChannel;
-import com.manhpham.notification.event.UserRegisteredEvent;
+import com.manhpham.common.core.event.UserRegisteredEvent;
 import com.manhpham.notification.services.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

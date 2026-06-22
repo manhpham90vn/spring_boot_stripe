@@ -3,7 +3,7 @@ package com.manhpham.order.scheduler;
 import com.manhpham.order.client.PaymentClient;
 import com.manhpham.order.entities.Order;
 import com.manhpham.order.entities.OrderStatus;
-import com.manhpham.order.event.PaymentSettledEvent;
+import com.manhpham.common.core.event.PaymentSettledEvent;
 import com.manhpham.order.repositories.jpa.OrderRepository;
 import com.manhpham.order.services.OrderService;
 import lombok.extern.slf4j.Slf4j;

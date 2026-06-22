@@ -1,6 +1,7 @@
 package com.manhpham.payment.event;
 
-import com.manhpham.payment.core.dto.OutboxEvent;
+import com.manhpham.common.core.dto.OutboxEvent;
+import com.manhpham.common.core.event.PaymentSettledEvent;
 
 /** Bọc {@link PaymentSettledEvent} thành outbox: topic {@code payment.events}, key = orderId. */
 public final class PaymentSettledOutboxEvent extends OutboxEvent<PaymentSettledEvent> {

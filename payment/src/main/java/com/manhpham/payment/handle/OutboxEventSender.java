@@ -1,6 +1,6 @@
 package com.manhpham.payment.handle;
 
-import com.manhpham.payment.core.dto.OutboxEvent;
+import com.manhpham.common.core.dto.OutboxEvent;
 import com.manhpham.payment.entities.OutboxEventEntity;
 import com.manhpham.payment.repositories.jpa.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;

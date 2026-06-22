@@ -83,8 +83,10 @@
     -v "$PWD/<service>":/workspace -v ticketing-infra_maven-cache:/home/app/.m2 \
     -w /workspace ticketing-dev:latest -c "./mvnw -q -DskipTests test-compile"
   ```
-  Service phụ thuộc `common-security` (order, ticket, …): cài nó vào cache trước —
-  `... -v "$PWD/common-security":/workspace ... -c "./mvnw -q -DskipTests install"`.
+  Service phụ thuộc lib dùng chung (`libs/common-security`, `libs/common-core`): cài nó vào
+  cache trước — `... -v "$PWD/libs/common-security":/workspace ... -c "./mvnw -q -DskipTests install"`
+  (và tương tự cho `libs/common-core`). Lib dùng chung nằm trong `libs/`, build qua các service
+  `common-security-init` / `common-core-init` trong compose.
 
 ---
 
@@ -184,8 +186,9 @@ Chỉ thêm cái **thực sự dùng**. Bài học: producer event **không** c�
 | `id` | event id (idempotency phía consumer) |
 | `created_at` | **chỉ housekeeping** (để `OutboxPurgeJob` dọn) — KHÔNG map làm event timestamp của router: cột là `TIMESTAMPTZ`, còn `table.field.event.timestamp` đòi `INT64` → map vào sẽ làm task connector FAILED |
 
-Code mẫu (auth): `core/dto/OutboxEvent` (base) → `event/<X>OutboxEvent` (typed wrapper,
-khai báo aggregateType/Id/eventType) → `event/<X>Event` (record payload) →
+Code mẫu (auth): `common-core` › `common.core.dto.OutboxEvent` (base, DÙNG CHUNG) →
+`event/<X>OutboxEvent` (typed wrapper per-service, khai báo aggregateType/Id/eventType) →
+`common-core` › `common.core.event.<X>Event` (record payload, DÙNG CHUNG producer↔consumer) →
 `OutboxEventSender.fire()` → `entities/OutboxEventEntity`/bảng `outbox`.
 Connector: `infra/debezium/<svc>-outbox-connector.json` (compose) và
 `<svc>/deploy/debezium/<svc>-outbox-connector.yaml` (Strimzi/K8s).
@@ -268,8 +271,8 @@ management.otlp.tracing.endpoint=${OTLP_TRACING_ENDPOINT:http://localhost:4318/v
 ## 10. Xử lý lỗi (chuẩn API)
 
 - `handle/GlobalExceptionHandler` (`@RestControllerAdvice`) ánh xạ exception nghiệp vụ
-  → HTTP status + body `utils/response/ApiError` (timestamp, status, error, message,
-  fieldErrors).
+  → HTTP status + body `common-core` › `common.core.response.ApiError` (DÙNG CHUNG mọi service:
+  timestamp, status, error, message, fieldErrors).
 - Exception nghiệp vụ đặt ở `utils/exception/` (vd `EmailAlreadyUsedException` → 409).
 - Validation `MethodArgumentNotValidException` → 400 kèm `fieldErrors`.
 

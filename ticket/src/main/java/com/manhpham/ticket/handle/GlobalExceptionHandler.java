@@ -1,7 +1,7 @@
 package com.manhpham.ticket.handle;
 
 import com.manhpham.ticket.utils.exception.TicketNotFoundException;
-import com.manhpham.ticket.utils.response.ApiError;
+import com.manhpham.common.core.response.ApiError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;

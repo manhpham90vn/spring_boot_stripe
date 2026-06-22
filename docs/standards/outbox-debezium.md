@@ -83,9 +83,9 @@ Tên cột khớp field mapping của Debezium Outbox Event Router (§4).
 
 | Lớp | Vai trò |
 |-----|---------|
-| `core/dto/OutboxEvent<T>` | Lớp cơ sở: payload + 3 metadata trừu tượng (`aggregateType`, `aggregateId`, `eventType`) |
-| `event/UserRegisteredEvent` (record) | **Payload** nghiệp vụ — đúng phần JSON. Chỉ field cần, KHÔNG secret |
-| `event/UserRegisteredOutboxEvent` | Bọc payload + gắn metadata định tuyến cụ thể |
+| `common-core` › `common.core.dto.OutboxEvent<T>` | **DÙNG CHUNG** (lib `libs/common-core`): lớp cơ sở payload + 3 metadata trừu tượng (`aggregateType`, `aggregateId`, `eventType`) |
+| `common-core` › `common.core.event.UserRegisteredEvent` (record) | **DÙNG CHUNG**: **Payload** nghiệp vụ — đúng phần JSON, là CONTRACT chung producer↔consumer. Chỉ field cần, KHÔNG secret |
+| `event/UserRegisteredOutboxEvent` | (PER-SERVICE, ở producer) Bọc payload + gắn metadata định tuyến cụ thể |
 | `handle/OutboxEventSender` | Cây cầu DUY NHẤT: serialize payload → JSON, `repository.save(...)` |
 | `entities/OutboxEventEntity` | Map tới bảng `outbox` |
 | `scheduler/OutboxPurgeJob` | Dọn dòng cũ (chỉ housekeeping) |
@@ -165,9 +165,11 @@ spring.cloud.stream.default.consumer.auto-offset-reset=earliest
 ```
 Quy ước binding: `<tên-bean>-in-0` = cổng vào; trỏ `destination` tới topic.
 
-> **Event là bản SAO ở phía consumer.** `notification` có `UserRegisteredEvent` RIÊNG (không
-> dùng chung class với auth) — mỗi service tự sở hữu model, giao tiếp qua "hợp đồng JSON".
-> Jackson khớp theo **tên field**, nên tên phải trùng bên gửi; field thừa được bỏ qua.
+> **Event payload là CONTRACT dùng chung.** Cả producer (`auth`) và consumer (`notification`)
+> dùng chung một class `UserRegisteredEvent` ở lib `libs/common-core` (`common.core.event`) —
+> một nguồn sự thật cho "hợp đồng JSON". Jackson vẫn khớp theo **tên field**; field thừa được
+> bỏ qua. **Đánh đổi:** đổi shape payload là sửa đồng loạt producer + MỌI consumer — đây là
+> chủ ý (ưu tiên contract thống nhất hơn là loose-coupling kiểu mỗi service một bản sao).
 
 ---
 
@@ -197,9 +199,11 @@ Ví dụ: `order` phát `OrderCompleted` cho `ticket` (phát vé) + `notificatio
 
 ### 7.1 Ở service PRODUCER (`order`)
 1. **Bảng outbox**: thêm `CREATE TABLE outbox (...)` y hệt §3.1 vào migration của `order`.
-2. **Bộ khung outbox**: tạo `OutboxEvent<T>`, `OutboxEventEntity`, `OutboxEventSender`,
-   `OutboxEventRepository`, `OutboxPurgeJob` (copy khuôn từ `auth`).
-3. **Event**: `OrderCompletedEvent` (record payload) + `OrderCompletedOutboxEvent` với:
+2. **Bộ khung outbox**: tạo `OutboxEventEntity`, `OutboxEventSender`, `OutboxEventRepository`,
+   `OutboxPurgeJob` (copy khuôn từ `auth`). `OutboxEvent<T>` base **lấy từ `common-core`**
+   (`common.core.dto`) — không copy per-service nữa; thêm dependency `common-core` nếu chưa có.
+3. **Event**: thêm record payload `OrderCompletedEvent` vào `libs/common-core`
+   (`common.core.event`) + `OrderCompletedOutboxEvent` (per-service, ở producer) với:
    - `aggregateType = "order"` → topic `order.events`
    - `aggregateId = orderId` → key/giữ thứ tự theo đơn
    - `eventType = "OrderCompleted"`
@@ -217,7 +221,8 @@ Ví dụ: `order` phát `OrderCompleted` cho `ticket` (phát vé) + `notificatio
    spring.cloud.function.definition=...;orderCompletedSink
    spring.cloud.stream.bindings.orderCompletedSink-in-0.destination=order.events
    ```
-3. Tạo bản sao record `OrderCompletedEvent` (khớp tên field bên gửi).
+3. Dùng chung record `OrderCompletedEvent` từ `common-core` (thêm dependency `common-core`
+   nếu service chưa có) — KHÔNG tạo bản sao per-service nữa.
 4. **Idempotent**: vd `ticket` kiểm "đã phát vé cho orderId này chưa" trước khi phát.
 
 ### 7.3 Khi có NHIỀU service producer — cấu hình Debezium

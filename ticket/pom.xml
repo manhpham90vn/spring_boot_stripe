@@ -118,6 +118,13 @@
 			<scope>runtime</scope>
 			<optional>true</optional>
 		</dependency>
+		<!-- Model dùng chung (vd OutboxEvent, ApiError) — lib jar thuần ở libs/common-core. -->
+		<dependency>
+			<groupId>com.manhpham</groupId>
+			<artifactId>common-core</artifactId>
+			<version>0.0.1-SNAPSHOT</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>

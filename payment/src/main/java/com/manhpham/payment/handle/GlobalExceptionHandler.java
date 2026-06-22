@@ -1,7 +1,7 @@
 package com.manhpham.payment.handle;
 
 import com.manhpham.payment.utils.exception.PaymentNotFoundException;
-import com.manhpham.payment.utils.response.ApiError;
+import com.manhpham.common.core.response.ApiError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;

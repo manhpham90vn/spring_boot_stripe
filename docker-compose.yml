@@ -206,7 +206,19 @@ services:
     container_name: ticketing-common-security-init
     restart: "no"
     volumes:
-      - ./common-security:/workspace
+      - ./libs/common-security:/workspace
+      - maven-cache:/home/app/.m2
+    entrypoint: ["sh", "-c", "./mvnw -B -ntp install -DskipTests"]
+
+  common-core-init:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    image: ticketing-dev:latest
+    container_name: ticketing-common-core-init
+    restart: "no"
+    volumes:
+      - ./libs/common-core:/workspace
       - maven-cache:/home/app/.m2
     entrypoint: ["sh", "-c", "./mvnw -B -ntp install -DskipTests"]
 
@@ -265,6 +277,8 @@ services:
         condition: service_healthy
       jwt-keys-init:
         condition: service_completed_successfully
+      common-core-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth
@@ -289,6 +303,8 @@ services:
       redis:
         condition: service_healthy
       common-security-init:
+        condition: service_completed_successfully
+      common-core-init:
         condition: service_completed_successfully
     environment:
       <<: *spring-env
@@ -315,6 +331,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      common-core-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/inventory
@@ -336,6 +354,8 @@ services:
       kafka:
         condition: service_healthy
       common-security-init:
+        condition: service_completed_successfully
+      common-core-init:
         condition: service_completed_successfully
     environment:
       <<: *spring-env
@@ -362,6 +382,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      common-core-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment
@@ -386,6 +408,8 @@ services:
         condition: service_healthy
       common-security-init:
         condition: service_completed_successfully
+      common-core-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ticket
@@ -409,6 +433,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      common-core-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification
@@ -429,6 +455,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      common-core-init:
+        condition: service_completed_successfully
     environment:
       <<: *spring-env
       # Verify JWT để gác /api/waitingroom/admin/** (chỉnh cấu hình admission từ admin).

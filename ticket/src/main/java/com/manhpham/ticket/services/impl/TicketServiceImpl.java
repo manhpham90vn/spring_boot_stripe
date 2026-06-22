@@ -4,7 +4,7 @@ import com.manhpham.ticket.client.CatalogClient;
 import com.manhpham.ticket.dto.TicketResponse;
 import com.manhpham.ticket.dto.ValidateResponse;
 import com.manhpham.ticket.entities.IssuedTicket;
-import com.manhpham.ticket.event.OrderCompletedEvent;
+import com.manhpham.common.core.event.OrderCompletedEvent;
 import com.manhpham.ticket.qr.QrSigner;
 import com.manhpham.ticket.repositories.jpa.IssuedTicketRepository;
 import com.manhpham.ticket.services.TicketService;

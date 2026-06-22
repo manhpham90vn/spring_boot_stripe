@@ -1,6 +1,6 @@
 package com.manhpham.ticket.processors.sink;
 
-import com.manhpham.ticket.event.OrderCompletedEvent;
+import com.manhpham.common.core.event.OrderCompletedEvent;
 import com.manhpham.ticket.services.TicketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

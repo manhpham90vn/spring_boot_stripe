@@ -1,7 +1,7 @@
 # Xác thực JWT — Stateless, khóa đối xứng/bất đối xứng & quy trình verify
 
 > **Mục đích:** giải thích cơ chế xác thực của hệ thống và **bám sát code đang
-> chạy** trong `auth/`, `apigateway/`, `common-security/`. Ràng buộc gốc ở
+> chạy** trong `auth/`, `apigateway/`, `libs/common-security/`. Ràng buộc gốc ở
 > [`/CLAUDE.md`](../../CLAUDE.md); kiến trúc tổng quan ở [`architecture.md`](../overview/architecture.md).
 >
 > **TL;DR triển khai hiện tại:** Auth ký token bằng **RS256 (bất đối xứng)**, công

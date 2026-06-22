@@ -1,6 +1,7 @@
 package com.manhpham.order.event;
 
-import com.manhpham.order.core.dto.OutboxEvent;
+import com.manhpham.common.core.dto.OutboxEvent;
+import com.manhpham.common.core.event.OrderCompletedEvent;
 
 /** Bọc {@link OrderCompletedEvent} thành bản ghi outbox: topic {@code order.events}, key = orderId. */
 public final class OrderCompletedOutboxEvent extends OutboxEvent<OrderCompletedEvent> {

@@ -1,6 +1,6 @@
 package com.manhpham.order.processors.sink;
 
-import com.manhpham.order.event.PaymentSettledEvent;
+import com.manhpham.common.core.event.PaymentSettledEvent;
 import com.manhpham.order.services.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

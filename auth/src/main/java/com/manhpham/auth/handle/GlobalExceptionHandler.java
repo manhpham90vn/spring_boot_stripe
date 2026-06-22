@@ -3,7 +3,7 @@ package com.manhpham.auth.handle;
 import com.manhpham.auth.utils.exception.EmailAlreadyUsedException;
 import com.manhpham.auth.utils.exception.InvalidCredentialsException;
 import com.manhpham.auth.utils.exception.UserNotFoundException;
-import com.manhpham.auth.utils.response.ApiError;
+import com.manhpham.common.core.response.ApiError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;

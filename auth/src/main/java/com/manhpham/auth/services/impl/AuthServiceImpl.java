@@ -5,7 +5,7 @@ import com.manhpham.auth.dto.RegisterRequest;
 import com.manhpham.auth.dto.TokenResponse;
 import com.manhpham.auth.entities.Role;
 import com.manhpham.auth.entities.User;
-import com.manhpham.auth.event.UserRegisteredEvent;
+import com.manhpham.common.core.event.UserRegisteredEvent;
 import com.manhpham.auth.event.UserRegisteredOutboxEvent;
 import com.manhpham.auth.handle.OutboxEventSender;
 import com.manhpham.auth.repositories.jpa.UserRepository;

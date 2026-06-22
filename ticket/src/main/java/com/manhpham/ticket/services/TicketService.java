@@ -3,7 +3,7 @@ package com.manhpham.ticket.services;
 import com.manhpham.ticket.dto.TicketResponse;
 import com.manhpham.ticket.dto.ValidateResponse;
 import com.manhpham.ticket.entities.IssuedTicket;
-import com.manhpham.ticket.event.OrderCompletedEvent;
+import com.manhpham.common.core.event.OrderCompletedEvent;
 
 import java.util.List;
 import java.util.UUID;

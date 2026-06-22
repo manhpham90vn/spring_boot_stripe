@@ -3,7 +3,7 @@ package com.manhpham.payment.webhook;
 import com.manhpham.payment.entities.Payment;
 import com.manhpham.payment.entities.PaymentStatus;
 import com.manhpham.payment.entities.ProcessedEvent;
-import com.manhpham.payment.event.PaymentSettledEvent;
+import com.manhpham.common.core.event.PaymentSettledEvent;
 import com.manhpham.payment.event.PaymentSettledOutboxEvent;
 import com.manhpham.payment.handle.OutboxEventSender;
 import com.manhpham.payment.repositories.jpa.PaymentRepository;

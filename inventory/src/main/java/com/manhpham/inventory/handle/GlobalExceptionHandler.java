@@ -3,7 +3,7 @@ package com.manhpham.inventory.handle;
 import com.manhpham.inventory.utils.exception.HoldNotFoundException;
 import com.manhpham.inventory.utils.exception.InsufficientStockException;
 import com.manhpham.inventory.utils.exception.StockNotFoundException;
-import com.manhpham.inventory.utils.response.ApiError;
+import com.manhpham.common.core.response.ApiError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;

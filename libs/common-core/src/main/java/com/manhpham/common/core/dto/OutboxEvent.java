@@ -1,4 +1,4 @@
-package com.manhpham.auth.core.dto;
+package com.manhpham.common.core.dto;
 
 /**
  * Lớp CƠ SỞ trừu tượng cho mọi domain event sẽ đi qua transactional outbox.

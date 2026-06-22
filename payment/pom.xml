@@ -63,6 +63,12 @@
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
+		<!-- Model dùng chung (vd OutboxEvent base class) — lib jar thuần ở libs/common-core. -->
+		<dependency>
+			<groupId>com.manhpham</groupId>
+			<artifactId>common-core</artifactId>
+			<version>0.0.1-SNAPSHOT</version>
+		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>

@@ -1,6 +1,6 @@
 package com.manhpham.order.handle;
 
-import com.manhpham.order.core.dto.OutboxEvent;
+import com.manhpham.common.core.dto.OutboxEvent;
 import com.manhpham.order.entities.OutboxEventEntity;
 import com.manhpham.order.repositories.jpa.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;

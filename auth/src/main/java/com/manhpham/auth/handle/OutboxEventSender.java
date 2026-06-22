@@ -1,6 +1,6 @@
 package com.manhpham.auth.handle;
 
-import com.manhpham.auth.core.dto.OutboxEvent;
+import com.manhpham.common.core.dto.OutboxEvent;
 import com.manhpham.auth.entities.OutboxEventEntity;
 import com.manhpham.auth.repositories.jpa.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;

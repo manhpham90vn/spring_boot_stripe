@@ -1,7 +1,7 @@
 package com.manhpham.waitingroom.handle;
 
 import com.manhpham.waitingroom.utils.exception.CaptchaFailedException;
-import com.manhpham.waitingroom.utils.response.ApiError;
+import com.manhpham.common.core.response.ApiError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;

@@ -5,7 +5,7 @@ import com.manhpham.catalog.utils.exception.EventNotFoundException;
 import com.manhpham.catalog.utils.exception.SeatNotFoundException;
 import com.manhpham.catalog.utils.exception.TicketTypeNotFoundException;
 import com.manhpham.catalog.utils.exception.VenueNotFoundException;
-import com.manhpham.catalog.utils.response.ApiError;
+import com.manhpham.common.core.response.ApiError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;

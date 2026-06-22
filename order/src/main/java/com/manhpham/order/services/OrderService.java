@@ -2,7 +2,7 @@ package com.manhpham.order.services;
 
 import com.manhpham.order.dto.OrderResponse;
 import com.manhpham.order.dto.PlaceOrderRequest;
-import com.manhpham.order.event.PaymentSettledEvent;
+import com.manhpham.common.core.event.PaymentSettledEvent;
 
 import java.util.UUID;
 
