@@ -1,9 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { authStore } from '../stores/auth'
+import { useAuthStore } from '../stores/auth'
 import LoginView from '../views/LoginView.vue'
-import VenuesView from '../views/VenuesView.vue'
 import EventsView from '../views/EventsView.vue'
 import EventDetailView from '../views/EventDetailView.vue'
+import VenuesView from '../views/VenuesView.vue'
 import WaitingRoomView from '../views/WaitingRoomView.vue'
 
 const router = createRouter({
@@ -22,11 +22,12 @@ const router = createRouter({
 
 // Guard: bảo đảm đã khôi phục phiên, chặn route cần auth.
 router.beforeEach(async (to) => {
-  await authStore.init()
-  if (!to.meta.public && !authStore.isAuthenticated) {
+  const auth = useAuthStore()
+  await auth.init()
+  if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
-  if (to.name === 'login' && authStore.isAuthenticated) {
+  if (to.name === 'login' && auth.isAuthenticated) {
     return { name: 'events' }
   }
 })

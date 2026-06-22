@@ -26,3 +26,11 @@ export function localInputToIso(local: string): string | null {
   if (!local) return null
   return new Date(local).toISOString()
 }
+
+// ETA giây → "Mm Ss" cho dễ đọc (Waiting Room).
+export function formatDuration(sec: number): string {
+  if (sec <= 0) return '—'
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return m > 0 ? `${m}m ${s}s` : `${s}s`
+}

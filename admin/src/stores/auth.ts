@@ -1,42 +1,37 @@
-import { reactive, readonly } from 'vue'
-import { auth as authApi } from '../api/endpoints'
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { authApi } from '../api/auth'
 import { getToken, setToken } from '../api/client'
-import type { UserResponse } from '../api/types'
+import type { UserResponse } from '../types/auth'
 
-// Store đăng nhập đơn giản dùng reactive singleton (đủ cho admin, không cần Pinia).
-interface AuthState {
-  user: UserResponse | null
-  ready: boolean // đã thử khôi phục phiên xong chưa
-}
+export const useAuthStore = defineStore('auth', () => {
+  const user = ref<UserResponse | null>(null)
+  const ready = ref(false) // đã thử khôi phục phiên xong chưa
 
-const state = reactive<AuthState>({ user: null, ready: false })
+  const isAuthenticated = computed(() => user.value !== null)
+  const isAdmin = computed(() => user.value?.role === 'ADMIN')
 
-export const authStore = {
-  state: readonly(state),
-
-  // Khôi phục phiên lúc khởi động nếu còn token.
-  async init() {
-    if (state.ready) return
+  // Khôi phục phiên lúc khởi động nếu còn token (chạy đúng một lần).
+  async function init() {
+    if (ready.value) return
     if (getToken()) {
       try {
-        state.user = await authApi.me()
+        user.value = await authApi.me()
       } catch {
         setToken(null)
       }
     }
-    state.ready = true
-  },
+    ready.value = true
+  }
 
-  async login(email: string, password: string) {
-    state.user = await authApi.login(email, password)
-  },
+  async function login(email: string, password: string) {
+    user.value = await authApi.login(email, password)
+  }
 
-  logout() {
+  function logout() {
     setToken(null)
-    state.user = null
-  },
+    user.value = null
+  }
 
-  get isAuthenticated() {
-    return state.user !== null
-  },
-}
+  return { user, ready, isAuthenticated, isAdmin, init, login, logout }
+})

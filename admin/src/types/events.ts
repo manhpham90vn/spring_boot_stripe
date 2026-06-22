@@ -1,43 +1,7 @@
-// Kiểu phản chiếu DTO backend (catalog + auth). Đồng bộ thủ công.
+import type { VenueResponse } from './venues'
 
 export type EventStatus = 'DRAFT' | 'ON_SALE' | 'CLOSED' | 'CANCELLED'
 export type TicketTypeKind = 'GA' | 'SEATED'
-
-// Cấu hình admission động của Waiting Room (rate = số người thả/giây; TTL tính bằng giây).
-export interface AdmissionConfig {
-  rate: number
-  tokenTtlSeconds: number
-  admitTtlSeconds: number
-}
-
-// Thống kê hàng chờ 1 event (ảnh chụp tại thời điểm gọi). Phản chiếu EventStats backend.
-export interface EventStats {
-  eventId: string
-  waiting: number // số người đang chờ
-  admittedTotal: number // tổng đã được thả vào (cộng dồn)
-  ratePerSecond: number // nhịp thả hiệu lực
-  etaSeconds: number // thời gian dự kiến rút cạn hàng
-  soldOut: boolean
-}
-
-export interface TokenResponse {
-  accessToken: string
-  tokenType: string
-  expiresIn: number
-}
-
-export interface UserResponse {
-  id: string
-  email: string
-  role: string
-}
-
-export interface VenueResponse {
-  id: string
-  name: string
-  address: string | null
-  city: string | null
-}
 
 export interface TicketTypeResponse {
   id: string
@@ -70,12 +34,6 @@ export interface EventDetailResponse {
 }
 
 // ---- Request payloads ----
-export interface VenuePayload {
-  name: string
-  address: string
-  city: string
-}
-
 export interface EventPayload {
   venueId: string
   title: string

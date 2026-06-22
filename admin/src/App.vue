@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { computed } from 'vue'
-import { authStore } from './stores/auth'
+import { useAuthStore } from './stores/auth'
 
 const route = useRoute()
 const router = useRouter()
-const showChrome = computed(() => route.name !== 'login' && authStore.isAuthenticated)
+const auth = useAuthStore()
+const showChrome = computed(() => route.name !== 'login' && auth.isAuthenticated)
 
 function logout() {
-  authStore.logout()
+  auth.logout()
   router.push({ name: 'login' })
 }
 </script>
@@ -21,8 +22,8 @@ function logout() {
       <RouterLink :to="{ name: 'venues' }">📍 Địa điểm</RouterLink>
       <RouterLink :to="{ name: 'waiting-room' }">⏳ Waiting Room</RouterLink>
       <div class="sidebar__foot">
-        <div>{{ authStore.state.user?.email }}</div>
-        <div class="muted">{{ authStore.state.user?.role }}</div>
+        <div>{{ auth.user?.email }}</div>
+        <div class="muted">{{ auth.user?.role }}</div>
         <button class="btn btn--sm" style="margin-top: 10px" @click="logout">Đăng xuất</button>
       </div>
     </aside>

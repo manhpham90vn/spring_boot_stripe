@@ -1,24 +1,5 @@
 name: ticketing-infra
 
-# ---------------------------------------------------------------------------
-# Compose được chia theo PROFILE để bật/tắt từng nhóm độc lập:
-#   db        -> hạ tầng lưu trữ: postgres, redis, kafka, minio, mailpit
-#   services  -> init containers + Debezium connect + toàn bộ Spring service + nginx
-#   frontend  -> web (React) + admin (Vue), chạy vite dev
-#   tunnel    -> cloudflared (expose public, optional)
-#
-# Compose v2.20+ tự kéo dependency ở profile khác lên qua depends_on, nên chỉ
-# cần bật profile của thứ mình muốn:
-#   docker compose --profile db up -d                  # chỉ hạ tầng
-#   docker compose --profile services up -d            # service (tự bật db)
-#   docker compose --profile services --profile frontend up -d
-#   docker compose --profile services --profile frontend --profile tunnel up -d
-#
-# Tools quản lý hạ tầng (swagger-ui, adminer, kafka-ui, redis-commander) nằm ở
-# file riêng cho gọn:
-#   docker compose -f docker-compose.tools.yml --profile tools up -d
-# ---------------------------------------------------------------------------
-
 x-app: &app
   restart: unless-stopped
   build:
@@ -34,7 +15,6 @@ x-fe: &fe
   image: ticketing-node:latest
   working_dir: /app
   environment:
-    # Vite dev proxy /api -> apigateway (cửa vào nghiệp vụ duy nhất), qua DNS nội bộ.
     API_TARGET: http://apigateway:8080
 
 x-spring-env: &spring-env
@@ -51,9 +31,6 @@ x-app-healthcheck: &app-healthcheck
   start_period: 120s
 
 services:
-  # ========================================================================
-  # Profile: db — hạ tầng lưu trữ / message broker
-  # ========================================================================
   postgres:
     image: postgres:16-alpine
     container_name: ticketing-postgres
@@ -175,9 +152,6 @@ services:
       echo 'buckets ready';
       "
 
-  # ========================================================================
-  # Profile: services — init containers, CDC, Spring services, edge nginx
-  # ========================================================================
   connect:
     image: quay.io/debezium/connect:2.7
     container_name: ticketing-connect
@@ -515,9 +489,7 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *spring-env
-      # Verify JWT để gác /api/waitingroom/admin/** (chỉnh cấu hình admission từ admin).
       JWK_SET_URI: http://auth:8081/internal/jwks
-      # Đọc tồn kho để biết khi nào ngừng thả (admission rate phải biết tồn kho còn lại).
       ROUTE_INVENTORY_URI: http://inventory:8083
     volumes:
       - ./waitingroom:/workspace
@@ -538,14 +510,10 @@ services:
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
 
-  # ========================================================================
-  # Profile: frontend — web (React) + admin (Vue), vite dev server
-  # ========================================================================
   web:
     <<: *fe
     container_name: ticketing-web
     profiles: ["frontend"]
-    # pnpm install rồi chạy vite, bind 0.0.0.0 để truy cập từ host.
     command: sh -c "pnpm install && pnpm dev --host 0.0.0.0 --port 5173"
     volumes:
       - ./web:/app
@@ -564,9 +532,6 @@ services:
     ports:
       - "5174:5174"
 
-  # ========================================================================
-  # Profile: tunnel — cloudflared (expose public, optional)
-  # ========================================================================
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: ticketing-cloudflared
@@ -576,7 +541,6 @@ services:
       - nginx
     command: tunnel --no-autoupdate --url http://nginx:80
 
-# Network có tên cố định để docker-compose.tools.yml join vào (external).
 networks:
   default:
     name: ticketing-net

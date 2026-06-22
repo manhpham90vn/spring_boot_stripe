@@ -1,29 +1,11 @@
 name: ticketing-tools
 
-# ---------------------------------------------------------------------------
-# Tools quản lý hạ tầng — tách riêng cho gọn, KHÔNG bật cùng stack chính.
-# Join vào network ngoài "ticketing-net" (do docker-compose.yml tạo) để gọi
-# postgres/redis/kafka/service qua DNS nội bộ.
-#
-#   # bật stack chính trước (tạo network ticketing-net):
-#   docker compose --profile db --profile services up -d
-#   # rồi bật tools:
-#   docker compose -f docker-compose.tools.yml --profile tools up -d
-#
-#   pgweb        -> http://localhost:8091   (Postgres, chế độ sessions: tự nhập DB)
-#   redisinsight -> http://localhost:5540   (Redis; add host redis:6379)
-#   kafka-ui     -> http://localhost:8090   (Kafka topic + Debezium connect)
-#   swagger-ui   -> http://localhost:8092/swagger  (cũng vào được qua nginx /swagger/)
-# ---------------------------------------------------------------------------
-
 services:
   pgweb:
     image: sosedoff/pgweb:latest
     container_name: ticketing-pgweb
     profiles: ["tools"]
     restart: unless-stopped
-    # Chế độ sessions: form đăng nhập tự chọn DB (auth/catalog/order/...) vì mỗi
-    # service một database. Host: postgres  Port: 5432  User/Pass: app/app (mặc định).
     command: ["pgweb", "--bind", "0.0.0.0", "--listen", "8081", "--sessions"]
     ports:
       - "8091:8081"
@@ -74,7 +56,6 @@ services:
           {"name": "waitingroom", "url": "/api-docs/waitingroom"}
         ]
 
-# Network ngoài do stack chính (docker-compose.yml) tạo.
 networks:
   default:
     name: ticketing-net

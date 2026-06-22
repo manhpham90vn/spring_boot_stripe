@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { authStore } from '../stores/auth'
-import { ApiError } from '../api/client'
+import { useAuthStore } from '../stores/auth'
+import { errorMessage } from '../lib/errors'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
+
 const email = ref('')
 const password = ref('')
 const error = ref<string | null>(null)
@@ -15,16 +17,16 @@ async function submit() {
   error.value = null
   busy.value = true
   try {
-    await authStore.login(email.value, password.value)
-    if (authStore.state.user?.role !== 'ADMIN') {
-      authStore.logout()
+    await auth.login(email.value, password.value)
+    if (!auth.isAdmin) {
+      auth.logout()
       error.value = 'Tài khoản này không có quyền ADMIN.'
       return
     }
     const redirect = (route.query.redirect as string) || '/events'
     router.push(redirect)
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : 'Đăng nhập thất bại.'
+    error.value = errorMessage(e, 'Đăng nhập thất bại.')
   } finally {
     busy.value = false
   }

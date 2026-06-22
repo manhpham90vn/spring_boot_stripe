@@ -1,74 +1,48 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
-import { waitingroom, events } from '../api/endpoints'
-import { ApiError } from '../api/client'
-import type { AdmissionConfig, EventStats } from '../api/types'
+import { useWaitingRoomStore } from '../stores/waitingRoom'
+import { useEventsStore } from '../stores/events'
+import { useAsync } from '../composables/useAsync'
+import { errorMessage } from '../lib/errors'
+import { formatDuration } from '../lib/format'
+import PageHeader from '../components/PageHeader.vue'
+import type { AdmissionConfig } from '../types/waitingRoom'
+
+const store = useWaitingRoomStore()
+const eventsStore = useEventsStore()
 
 // Cấu hình van Waiting Room. Lưu ở Redis của waitingroom (store chính — kiến trúc không dùng
 // PostgreSQL cho service này); cập nhật áp dụng NGAY cho bộ thả admission, không cần redeploy.
 const form = reactive<AdmissionConfig>({ rate: 20, tokenTtlSeconds: 1800, admitTtlSeconds: 120 })
-const loading = ref(true)
 const saving = ref(false)
-const error = ref<string | null>(null)
 const saved = ref(false)
 
-// --- Thống kê hàng chờ (ảnh chụp tức thời, poll định kỳ) ---
-const stats = ref<EventStats[]>([])
+const { error, loading, run: loadConfig } = useAsync(async () => {
+  const c = await store.fetchConfig()
+  Object.assign(form, c)
+}, 'Không tải được cấu hình.')
+
+// --- Thống kê hàng chờ (poll định kỳ) ---
 const statsError = ref<string | null>(null)
-const lastRefreshed = ref<Date | null>(null)
-// eventId → tiêu đề sự kiện (để hiển thị tên thay vì UUID).
-const titles = reactive<Record<string, string>>({})
 let timer: ReturnType<typeof setInterval> | null = null
-
-async function load() {
-  loading.value = true
-  error.value = null
-  try {
-    const c = await waitingroom.getConfig()
-    form.rate = c.rate
-    form.tokenTtlSeconds = c.tokenTtlSeconds
-    form.admitTtlSeconds = c.admitTtlSeconds
-  } catch (e) {
-    error.value = e instanceof ApiError ? e.message : 'Không tải được cấu hình.'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadTitles() {
-  try {
-    const list = await events.list()
-    for (const ev of list) titles[ev.id] = ev.title
-  } catch {
-    // Không có tên sự kiện thì hiển thị UUID — không chặn thống kê.
-  }
-}
 
 async function refreshStats() {
   try {
-    stats.value = await waitingroom.stats()
+    await store.fetchStats()
     statsError.value = null
-    lastRefreshed.value = new Date()
   } catch (e) {
-    statsError.value = e instanceof ApiError ? e.message : 'Không tải được thống kê.'
+    statsError.value = errorMessage(e, 'Không tải được thống kê.')
   }
 }
 
+// eventId → tiêu đề (dùng state events đã có; không fetch lại nếu đã nạp).
 function eventLabel(id: string): string {
-  return titles[id] ?? id
-}
-
-// ETA giây → "Mm Ss" cho dễ đọc.
-function formatEta(sec: number): string {
-  if (sec <= 0) return '—'
-  const m = Math.floor(sec / 60)
-  const s = sec % 60
-  return m > 0 ? `${m}m ${s}s` : `${s}s`
+  return eventsStore.list.find((e) => e.id === id)?.title ?? id
 }
 
 onMounted(() => {
-  load()
-  loadTitles()
+  loadConfig()
+  eventsStore.fetchList().catch(() => {}) // có tên thì đẹp, không có cũng không chặn thống kê
   refreshStats()
   timer = setInterval(refreshStats, 5000) // poll 5s — đủ tươi cho quan sát flash sale
 })
@@ -82,13 +56,11 @@ async function save() {
   error.value = null
   saved.value = false
   try {
-    const c = await waitingroom.updateConfig({ ...form })
-    form.rate = c.rate
-    form.tokenTtlSeconds = c.tokenTtlSeconds
-    form.admitTtlSeconds = c.admitTtlSeconds
+    const c = await store.updateConfig({ ...form })
+    Object.assign(form, c)
     saved.value = true
   } catch (e) {
-    error.value = e instanceof ApiError ? e.message : 'Lưu thất bại.'
+    error.value = errorMessage(e, 'Lưu thất bại.')
   } finally {
     saving.value = false
   }
@@ -96,58 +68,63 @@ async function save() {
 </script>
 
 <template>
-  <div style="margin-bottom: 20px">
-    <h1>Waiting Room</h1>
-    <p class="muted">
-      Van chặn spike khi flash sale. Cấu hình áp dụng ngay cho bộ thả (admission), không cần
-      khởi động lại service.
-    </p>
-  </div>
+  <PageHeader
+    title="Waiting Room"
+    subtitle="Van chặn spike khi flash sale. Cấu hình áp dụng ngay cho bộ thả (admission), không cần khởi động lại service."
+  />
 
   <!-- Thống kê hàng chờ theo thời gian thực -->
   <div class="panel" style="margin-bottom: 24px">
     <div class="row between" style="align-items: center; margin-bottom: 12px">
       <h2 style="margin: 0">Hàng chờ hiện tại</h2>
       <span class="muted" style="font-size: 13px">
-        <template v-if="lastRefreshed">
-          Cập nhật {{ lastRefreshed.toLocaleTimeString('vi-VN') }} · tự làm mới mỗi 5s
+        <template v-if="store.lastRefreshed">
+          Cập nhật {{ store.lastRefreshed.toLocaleTimeString('vi-VN') }} · tự làm mới mỗi 5s
         </template>
       </span>
     </div>
 
     <div v-if="statsError" class="alert">{{ statsError }}</div>
 
-    <p v-if="!statsError && stats.length === 0" class="muted">
+    <p v-if="!statsError && store.stats.length === 0" class="muted">
       Hiện không có sự kiện nào đang có hàng chờ.
     </p>
 
-    <table v-else-if="stats.length > 0" class="table">
-      <thead>
-        <tr>
-          <th>Sự kiện</th>
-          <th style="text-align: right">Đang chờ</th>
-          <th style="text-align: right">Tổng đã thả</th>
-          <th style="text-align: right">Nhịp thả</th>
-          <th style="text-align: right" title="Thời gian dự kiến để thả hết hàng — cũng là thời gian người cuối hàng phải chờ (ước lượng theo nhịp thả hiện tại)">
-            Chờ tối đa
-          </th>
-          <th>Trạng thái</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="s in stats" :key="s.eventId">
-          <td>{{ eventLabel(s.eventId) }}</td>
-          <td style="text-align: right">{{ s.waiting.toLocaleString('vi-VN') }}</td>
-          <td style="text-align: right">{{ s.admittedTotal.toLocaleString('vi-VN') }}</td>
-          <td style="text-align: right">{{ s.ratePerSecond }}/s</td>
-          <td style="text-align: right">{{ formatEta(s.etaSeconds) }}</td>
-          <td>
-            <span v-if="s.soldOut" class="badge badge--CANCELLED">Hết vé</span>
-            <span v-else class="badge badge--ON_SALE">Đang thả</span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <template v-else-if="store.stats.length > 0">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Sự kiện</th>
+            <th style="text-align: right">Đang chờ</th>
+            <th style="text-align: right">Tổng đã thả</th>
+            <th style="text-align: right">Nhịp thả</th>
+            <th style="text-align: right" title="Thời gian dự kiến để thả hết hàng — cũng là thời gian người cuối hàng phải chờ (ước lượng theo nhịp thả hiện tại)">
+              Chờ tối đa
+            </th>
+            <th>Trạng thái</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="s in store.stats" :key="s.eventId">
+            <td>{{ eventLabel(s.eventId) }}</td>
+            <td style="text-align: right">{{ s.waiting.toLocaleString('vi-VN') }}</td>
+            <td style="text-align: right">{{ s.admittedTotal.toLocaleString('vi-VN') }}</td>
+            <td style="text-align: right">{{ s.ratePerSecond }}/s</td>
+            <td style="text-align: right">{{ formatDuration(s.etaSeconds) }}</td>
+            <td>
+              <span v-if="s.soldOut" class="badge badge--CANCELLED">Hết vé</span>
+              <span v-else class="badge badge--ON_SALE">Đang thả</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="muted" style="font-size: 13px; margin: 10px 0 0">
+        <strong>Đang chờ</strong>: số người còn trong hàng · <strong>Tổng đã thả</strong>: số người
+        đã được cho vào mua (cộng dồn) · <strong>Chờ tối đa</strong>: ước lượng thời gian người cuối
+        hàng phải đợi theo nhịp thả hiện tại.
+      </p>
+    </template>
   </div>
 
   <h2 style="margin: 0 0 12px">Cấu hình admission</h2>
