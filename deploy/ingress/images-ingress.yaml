@@ -1,0 +1,35 @@
+# Origin cho CDN ảnh sự kiện / seat map. CDN ngoài (Cloudflare/provider) proxy host img.<domain>
+# và CACHE tại POP; cluster chỉ phục vụ cache-miss → spike tải ảnh KHÔNG đập vào edge/MinIO.
+#
+# CHỈ phơi bucket public "event-images" (path /event-images) → KHÔNG lộ bucket "ticket-qr" (private)
+# hay S3 API/console của MinIO. Bucket đã set anonymous download (deploy/infra/minio) nên GET object
+# không cần auth. URL ảnh: https://img.<domain>/event-images/<key>.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: event-images
+  namespace: ticketing
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Ảnh bất biến (đặt key theo nội dung/hash) → cache dài ở CDN lẫn trình duyệt.
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Cache-Control: public, max-age=31536000, immutable";
+    # Chỉ cho GET/HEAD — chặn ghi/xoá object qua origin này.
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [img.ticketing.local]   # đổi sang domain thật (khớp host bên dưới + DNS CDN)
+      secretName: event-images-tls
+  rules:
+    - host: img.ticketing.local      # CDN proxy host này; origin = edge ingress
+      http:
+        paths:
+          - path: /event-images       # chỉ bucket public — KHÔNG mở "/" (sẽ lộ cả MinIO)
+            pathType: Prefix
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000

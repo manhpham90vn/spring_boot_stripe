@@ -230,9 +230,11 @@ của primary, nếu không flash sale sẽ gặp `FATAL: sorry, too many client
   → Kafka replication, Postgres streaming, Redis traffic đi private (nhanh, không tốn bandwidth public).
 - **Chỉ edge** có public IP và mở 80/443. Data/app/master không phơi ra ngoài.
 - **TLS** ở Ingress (Stripe chỉ gửi tới HTTPS) — dùng cert-manager + Let's Encrypt hoặc cert tự quản.
-- **CDN** (dịch vụ ngoài, KHÔNG phải manifest cluster): đặt trước node edge, cache tài sản tĩnh —
-  seat map, ảnh sự kiện (origin = bucket MinIO `event-images` public), trang waiting-room — để cơn bão
-  tải trang lúc t=0 KHÔNG đập vào edge (giảm tải TLS/băng thông). Dev thay bằng `cloudflared` tunnel.
+- **CDN ảnh** (dịch vụ ngoài, vd Cloudflare): proxy host `img.<domain>` và cache tại POP — cluster chỉ
+  phục vụ cache-miss. **Origin trong cluster** = Ingress [`deploy/ingress/images-ingress.yaml`](../../deploy/ingress/images-ingress.yaml)
+  phơi **chỉ** bucket public MinIO `event-images` (path `/event-images`, Cache-Control immutable),
+  KHÔNG lộ `ticket-qr`/S3 API. Seat map + trang waiting-room tĩnh cũng nên đẩy sau CDN tương tự.
+  → cơn bão tải ảnh lúc t=0 KHÔNG đập vào edge/MinIO. Dev thay bằng `cloudflared` tunnel.
 - **Edge HA**: 3 public IP + **DNS round-robin** (VPS cloud không có floating IP L2 thật) — mất 1 edge
   chỉ ảnh hưởng ~1/3 thay vì 1/2. Nếu provider có **Reserved IP**, gắn vào edge và chuyển bằng script khi node chết.
 - Chi tiết Ingress/NetworkPolicy/mesh: xem [`deployment-k8s.md`](deployment-k8s.md).

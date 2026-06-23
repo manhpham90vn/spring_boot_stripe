@@ -101,4 +101,8 @@ spec:
               mc mb -p local/event-images
               mc mb -p local/ticket-qr
               mc anonymous set download local/event-images
+              # Object store cho Loki (log) — xem deploy/infra/monitoring (Loki ArgoCD app).
+              mc mb -p local/loki-chunks
+              mc mb -p local/loki-ruler
+              mc mb -p local/loki-admin
               echo 'buckets ready'

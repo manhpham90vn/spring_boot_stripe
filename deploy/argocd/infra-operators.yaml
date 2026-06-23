@@ -84,9 +84,126 @@ spec:
           prometheusSpec:
             # nhận mọi ServiceMonitor (không bó buộc theo release label)
             serviceMonitorSelectorNilUsesHelmValues: false
+        grafana:
+          # Cắm Loki làm datasource → vào Grafana › Explore chọn Loki để xem/log search (kiểu CloudWatch Logs).
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              access: proxy
+              url: http://loki-gateway.monitoring.svc.cluster.local
+              jsonData:
+                # cùng namespace monitoring; nếu Loki bật multi-tenant thì set httpHeaderName/X-Scope-OrgID
+                maxLines: 1000
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+# Loki — lưu/truy vấn log. Chế độ SingleBinary (1 process, đủ cho on-prem), object store = MinIO (S3).
+# Credential MinIO đọc từ secret "loki-minio" (tạo tay ở namespace monitoring — xem deploy/secrets).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 6.16.0        # VERIFY: pin version khớp cluster
+    helm:
+      values: |
+        deploymentMode: SingleBinary
+        loki:
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          schemaConfig:
+            configs:
+              - from: "2024-04-01"
+                store: tsdb
+                object_store: s3
+                schema: v13
+                index: { prefix: loki_index_, period: 24h }
+          storage:
+            type: s3
+            bucketNames: { chunks: loki-chunks, ruler: loki-ruler, admin: loki-admin }
+            s3:
+              endpoint: http://minio.ticketing.svc.cluster.local:9000   # MinIO ở namespace ticketing
+              region: us-east-1
+              s3ForcePathStyle: true        # MinIO bắt buộc path-style
+              insecure: true                # HTTP nội bộ cluster
+              accessKeyId: "${MINIO_USER}"          # expand từ env (secret loki-minio)
+              secretAccessKey: "${MINIO_PASSWORD}"
+        # SingleBinary: gom mọi vai trò vào 1 pod; tắt các deployment microservice.
+        singleBinary:
+          replicas: 1
+          extraArgs: ["-config.expand-env=true"]    # cho phép ${MINIO_USER}/${MINIO_PASSWORD}
+          extraEnvFrom:
+            - secretRef: { name: loki-minio }        # keys: MINIO_USER, MINIO_PASSWORD
+          persistence: { enabled: true, size: 5Gi }  # WAL/cache cục bộ (chunk/index nằm ở MinIO)
+        read: { replicas: 0 }
+        write: { replicas: 0 }
+        backend: { replicas: 0 }
+        chunksCache: { enabled: false }   # quy mô này chưa cần memcached
+        resultsCache: { enabled: false }
+        gateway: { enabled: true }        # service "loki-gateway" (datasource Grafana trỏ vào đây)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+# Grafana Alloy — collector chạy DaemonSet, gom log MỌI pod (mọi node) đẩy vào Loki.
+# (Promtail đã EOL → dùng Alloy.) Phải tolerate taint data/edge/control-plane để gom đủ node.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: 0.10.1        # VERIFY: pin version khớp cluster
+    helm:
+      values: |
+        controller:
+          type: daemonset
+          tolerations:            # gom log cả node data/edge/master, không chỉ app pool
+            - { operator: Exists }
+        alloy:
+          configMap:
+            content: |
+              // Phát hiện pod + gắn nhãn namespace/pod/container/app
+              discovery.kubernetes "pods" { role = "pod" }
+              discovery.relabel "pods" {
+                targets = discovery.kubernetes.pods.targets
+                rule { source_labels = ["__meta_kubernetes_namespace"]            target_label = "namespace" }
+                rule { source_labels = ["__meta_kubernetes_pod_name"]             target_label = "pod" }
+                rule { source_labels = ["__meta_kubernetes_pod_container_name"]   target_label = "container" }
+                rule { source_labels = ["__meta_kubernetes_pod_label_app"]        target_label = "app" }
+              }
+              // Đọc log container qua K8s API → đẩy sang Loki
+              loki.source.kubernetes "pods" {
+                targets    = discovery.relabel.pods.output
+                forward_to = [loki.write.default.receiver]
+              }
+              loki.write "default" {
+                endpoint { url = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push" }
+              }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

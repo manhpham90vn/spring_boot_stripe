@@ -31,11 +31,11 @@ deploy/
     minio/               #   Object storage tự host (event-images + ticket-qr) — thay S3 managed
     monitoring/          #   ServiceMonitor cho Prometheus
   argocd/
-    infra-operators.yaml #   4 App: CloudNativePG, Strimzi, Redis Operator, kube-prometheus-stack (wave -2)
+    infra-operators.yaml #   6 App: CloudNativePG, Strimzi, Redis Operator, kube-prometheus-stack, Loki, Alloy (wave -2)
     infra-resources.yaml #   App sync deploy/infra (wave -1)
     applicationset.yaml  #   sinh 9 App từ list, multi-source ($values) (wave 0)
     extras-app.yaml      #   App đồng bộ deploy/ingress
-  ingress/               # Ingress apigateway + Ingress webhook Stripe (DMZ), có TLS cert-manager
+  ingress/               # Ingress apigateway + webhook Stripe (DMZ) + event-images (origin CDN ảnh), TLS cert-manager
   edge/                  # Lớp VÀO (bootstrap, NGOÀI ArgoCD): ingress-nginx hostNetwork + ClusterIssuer
   secrets/secrets.example.yaml  # MẪU — tạo secret thật bằng kubectl, KHÔNG commit
 ```
@@ -52,6 +52,7 @@ Sync-wave đảm bảo thứ tự: Operator (tạo CRD) → CR hạ tầng → a
 | Kafka Connect + Debezium | Strimzi | `infra/kafka/connect.yaml` + `infra/kafka/connectors/*` | outbox → topic `<svc>.events` |
 | Object storage | MinIO (self-host) | `infra/minio/minio.yaml` | `http://minio:9000` (S3 API) |
 | Prometheus + Grafana | kube-prometheus-stack | `infra/monitoring/servicemonitor.yaml` | scrape `/actuator/prometheus` |
+| Logs (kiểu CloudWatch) | Loki + Grafana Alloy | `argocd/infra-operators.yaml` (Loki/Alloy app) | Grafana › Explore › Loki; lưu vào MinIO |
 
 - **Database-per-service (mức logical)**: 1 cluster Postgres dùng chung (1 primary + 1 replica),
   bên trong tạo 7 database riêng (`postInitSQL`), chung role `app`. CloudNativePG tự sinh secret
@@ -59,6 +60,10 @@ Sync-wave đảm bảo thứ tự: Operator (tạo CRD) → CR hạ tầng → a
 - **Redis**: 1 master + 1 replica + Sentinel. Chỉ master nhận write; op hot path O(1) nên đủ tải
   (Waiting Room đã throttle spike). App dùng `SPRING_DATA_REDIS_SENTINEL_*` (set ở `charts/service/values.yaml`).
 - **Grafana** đi kèm kube-prometheus-stack (đăng nhập lấy mật khẩu từ secret `kube-prom-grafana`).
+- **Logs (kiểu CloudWatch Logs)**: **Grafana Alloy** (DaemonSet, gom log mọi pod/mọi node) → **Loki**
+  (lưu chunk/index vào **MinIO** bucket `loki-chunks/ruler/admin`). Xem trong **Grafana › Explore › Loki**,
+  query LogQL `{namespace="ticketing", app="order"}` để theo log `OrderServiceImpl` real-time. Loki đọc
+  credential MinIO từ secret `loki-minio` (namespace `monitoring`). Cần HA → tăng MinIO + Loki replicas.
 - **Debezium (outbox CDC)**: prod KHÔNG dùng `connect-init` POST REST như dev — Strimzi `KafkaConnect`
   (`infra/kafka/connect.yaml`) tự build image kèm plugin Debezium Postgres, rồi reconcile các
   `KafkaConnector` trong `infra/kafka/connectors/` (auth/order/payment). Mỗi connector trỏ
@@ -123,6 +128,10 @@ kubectl -n ticketing create secret generic auth-jwt \
   --from-file=jwt-public.pem=infra/keys/jwt-public.pem
 kubectl -n ticketing create secret generic minio-creds \
   --from-literal=root-user='minioadmin' --from-literal=root-password='<mật-khẩu-mạnh>'
+# Cùng credential MinIO cho Loki (namespace monitoring) — Loki lưu log vào MinIO
+kubectl create namespace monitoring
+kubectl -n monitoring create secret generic loki-minio \
+  --from-literal=MINIO_USER='minioadmin' --from-literal=MINIO_PASSWORD='<mật-khẩu-mạnh>'
 # Docker Hub: pushSecret cho Kafka Connect build image + pull (bắt buộc, kể cả repo public)
 kubectl -n ticketing create secret docker-registry dockerhub \
   --docker-server=https://index.docker.io/v1/ \
@@ -164,6 +173,19 @@ webhook.<domain>.    300  IN  A  <edge-3-ip>
 - Nếu provider có **Reserved/Floating IP**: gắn vào 1 edge, dùng A record đơn + script chuyển IP
   khi node chết (failover nhanh hơn DNS round-robin) — xem topology §6.
 - Kiểm tra: `dig +short api.<domain>` phải trả về **cả 2** IP edge.
+
+**CDN ảnh (`img.<domain>`)** — KHÁC `api`/`webhook` (trỏ thẳng edge): host này trỏ vào **CDN ngoài**
+(vd Cloudflare), CDN mới lấy origin từ edge:
+
+```dns
+; Cloudflare: tạo bản ghi PROXIED (cam) → CDN cache; origin pull từ Ingress event-images.
+img.<domain>.        CNAME  <cdn-target>            ; vd <zone>.cdn.cloudflare.net (proxied)
+; nếu tự quản CDN: img.<domain> A → IP CDN POP, origin trỏ về api/edge IP
+```
+
+- Origin = Ingress `event-images` (`deploy/ingress/images-ingress.yaml`), chỉ phơi bucket `event-images`.
+  App sinh URL ảnh dạng `https://img.<domain>/event-images/<key>`.
+- CDN cache theo header `Cache-Control: immutable` đã set ở Ingress → cluster chỉ phục vụ cache-miss.
 
 ## Kiểm tra chart local
 
