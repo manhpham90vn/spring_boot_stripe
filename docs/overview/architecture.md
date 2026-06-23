@@ -191,7 +191,7 @@ Code mẫu (auth): `common-core` › `common.core.dto.OutboxEvent` (base, DÙNG 
 `common-core` › `common.core.event.<X>Event` (record payload, DÙNG CHUNG producer↔consumer) →
 `OutboxEventSender.fire()` → `entities/OutboxEventEntity`/bảng `outbox`.
 Connector: `infra/debezium/<svc>-outbox-connector.json` (compose) và
-`<svc>/deploy/debezium/<svc>-outbox-connector.yaml` (Strimzi/K8s).
+`deploy/infra/kafka/connectors/<svc>-outbox-connector.yaml` (Strimzi/K8s).
 
 > 📖 **Chi tiết đầy đủ + quy ước mở rộng** (thêm event/producer/consumer mới, cạm bẫy,
 > lệnh debug): [`outbox-debezium.md`](../standards/outbox-debezium.md).
@@ -327,4 +327,4 @@ management.otlp.tracing.endpoint=${OTLP_TRACING_ENDPOINT:http://localhost:4318/v
   idempotency, webhook, retry, đối soát, đặc thù JPY/Konbini).
 - Service mẫu: **`auth/`** — khuôn cho package layout, outbox/CDC, security, lỗi, Lombok.
 - `docker-compose.yml` — port, DB, Kafka/Debezium, profiles (`cdc`, `mail`, `full`…).
-- `infra/debezium/` + `<svc>/deploy/debezium/` — template connector outbox.
+- `infra/debezium/` (dev JSON) + `deploy/infra/kafka/connectors/` (prod KafkaConnector CRD) — connector outbox.

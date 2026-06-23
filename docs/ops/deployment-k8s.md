@@ -171,9 +171,11 @@ manifest. Compose vẫn dùng cho vòng lặp code nhanh (xem [`dev-runbook.md`]
 - Service gọi nhau qua **K8s DNS nội bộ** `http://<svc>:<port>` (đã chọn K8s thuần → không Consul).
 
 ## 7. Debezium trên K8s (Strimzi)
-Mỗi service producer ship một **`KafkaConnector` CRD** (`<svc>/deploy/debezium/<svc>-outbox-connector.yaml`);
-Strimzi operator reconcile. Khác dev (compose `connect-init` POST REST). Quy ước slot/
-publication/topic.prefix: xem [`outbox-debezium.md`](../standards/outbox-debezium.md) §7.3.
+Một **`KafkaConnect`** cluster ([`deploy/infra/kafka/connect.yaml`](../../deploy/infra/kafka/connect.yaml),
+Strimzi tự build image kèm plugin Debezium Postgres) chạy N **`KafkaConnector`** CRD — mỗi service
+producer một file trong [`deploy/infra/kafka/connectors/`](../../deploy/infra/kafka/connectors)
+(auth/order/payment). Strimzi operator reconcile. Khác dev (compose `connect-init` POST REST). Quy ước
+slot/publication/topic.prefix: xem [`outbox-debezium.md`](../standards/outbox-debezium.md) §7.3.
 
 ## 8. Lưu ý vận hành
 - **TLS** ở Ingress (đặc biệt webhook Stripe).

@@ -50,16 +50,22 @@ bị taint control-plane, data/edge bị taint riêng → chúng tránh; nên ap
 
 ---
 
-## 3. Topology — Production HA (11 node)
+## 3. Topology — Production HA (13 node)
 
 | Pool | Số node | Spec/node (gợi ý) | Ghi chú |
 |---|---|---|---|
 | master | **3** | 2 vCPU / 4 GB / 40 GB | quorum etcd **số lẻ** — 2 node là SAI (mất 1 = mất quorum) |
 | data | **3** | 4 vCPU / 16 GB / **100 GB SSD/NVMe** | Kafka + WAL Postgres ăn I/O → ưu tiên đĩa nhanh |
-| app | **3** | 4 vCPU / 16 GB / 40 GB | gánh cả monitoring + ArgoCD + operators |
-| edge | **2** | 2 vCPU / 4 GB / 40 GB | 2 public IP → DNS round-robin |
+| app | **4** | 4 vCPU / 16 GB / 40 GB | ~23 pod service + monitoring + ArgoCD + operators → node thứ 4 để KHÔNG over-subscribe CPU |
+| edge | **3** | 4 vCPU / 8 GB / 40 GB | terminate TLS cho cơn bão flash sale (CPU-bound) → 3 public IP, DNS round-robin |
 
-**Tổng:** ~34 vCPU · ~116 GB RAM · 3×100 GB SSD (data) + phần còn lại.
+**Tổng:** ~46 vCPU · ~148 GB RAM · 3×100 GB SSD (data) + phần còn lại.
+
+> **Vì sao nâng từ 11 → 13 node:** hai điểm nghẽn lúc t=0 mở bán không nằm ở hot path (đã được Waiting
+> Room + Redis O(1) che) mà ở **rìa**: (1) **edge** phải terminate TLS cho hàng chục nghìn kết nối nguội
+> — CPU-bound → tăng 2→**3 node** và 2→**4 vCPU**, kèm CDN cho trang tĩnh + tune `worker_connections`;
+> (2) **app pool** là "thùng chứa mặc định" (ôm cả monitoring/ArgoCD/operator) → 3 node bị over-subscribe
+> ở mức requests, tăng lên **4 node**. Data pool vẫn **3** (Kafka RF=3 ép số 3, Postgres/Redis 1m+1r là đủ).
 
 ### 3.1 Pod nằm ở đâu (anti-affinity đã set trong manifest)
 
@@ -68,25 +74,27 @@ master-1/2/3 : kube-apiserver, etcd, scheduler, controller-manager        (chỉ
 
 data-1 : kafka-broker-0 | postgres-primary | redis-master  | sentinel-0
 data-2 : kafka-broker-1 | postgres-replica  | redis-replica | sentinel-1
-data-3 : kafka-broker-2 | sentinel-2
+data-3 : kafka-broker-2 | sentinel-2 | minio
          → Kafka 3 broker rải đủ 3 node (anti-affinity REQUIRED);
            Postgres & Redis mỗi cái 2 bản → chiếm 2/3 node, primary≠replica;
-           3 Sentinel rải 3 node để bầu master đủ quorum.
+           3 Sentinel rải 3 node để bầu master đủ quorum;
+           MinIO (object storage) rơi vào data-3 đang dư (không hot-path, I/O nhẹ hơn Kafka WAL).
 
-app-1/2/3 : apigateway×3, auth×2, catalog×2, inventory×3, order×3,
-            payment×2, ticket×2, notification×2, waitingroom×2, debezium-connect×2
-            (~23 pod, anti-affinity MỀM trải đều)
-          + Prometheus, Grafana, Loki, ArgoCD, CloudNativePG/Strimzi/Redis operator
+app-1/2/3/4 : apigateway×3, auth×2, catalog×2, inventory×3, order×3,
+              payment×2, ticket×2, notification×2, waitingroom×2, debezium-connect×2
+              (~23 pod, anti-affinity MỀM trải đều trên 4 node)
+            + Prometheus, Grafana, Loki, ArgoCD, CloudNativePG/Strimzi/Redis operator
+              (node thứ 4 để khối hệ thống này KHÔNG bóp CPU của service)
 
-edge-1/2 : ingress-nginx (hostNetwork :80/:443)
-           DNS: api.<domain> + webhook.<domain>  →  round-robin 2 public IP
+edge-1/2/3 : ingress-nginx (hostNetwork :80/:443)
+             DNS: api.<domain> + webhook.<domain>  →  round-robin 3 public IP
 ```
 
 ### 3.2 Vì sao đúng **3** node data
 - **Kafka** cấu hình `replication.factor=3, min.insync.replicas=2` (bền cho luồng tiền/vé)
   → cần **3 broker trên 3 host khác nhau** (anti-affinity *required*). Đây là yếu tố ép số 3.
-- Postgres (2) và Redis (2) chỉ chiếm 2/3 node → data-3 hơi dư. Có thể nâng Postgres/Redis lên
-  3 bản để lấp đầy nếu muốn đọc nhiều hơn, nhưng 1m+1r là đủ (xem §5).
+- Postgres (2) và Redis (2) chỉ chiếm 2/3 node → data-3 hơi dư; **MinIO** (object storage 1 instance)
+  đặt vào đây cho đỡ phí. Có thể nâng Postgres/Redis lên 3 bản nếu muốn đọc nhiều hơn, nhưng 1m+1r là đủ (xem §5).
 
 ---
 
@@ -101,12 +109,12 @@ KHÔNG ghim tay từng pod. Toàn bộ đã nhúng sẵn trong manifest `deploy/
 kubectl label node <data-1> <data-2> <data-3> workload=data
 kubectl taint node <data-1> <data-2> <data-3> dedicated=data:NoSchedule
 
-# App (9 service + Debezium + monitoring + argocd)
-kubectl label node <app-1> <app-2> <app-3> workload=app
+# App (9 service + Debezium + monitoring + argocd) — 4 node
+kubectl label node <app-1> <app-2> <app-3> <app-4> workload=app
 
-# Edge (ingress, public IP)
-kubectl label node <edge-1> <edge-2> workload=edge
-kubectl taint node <edge-1> <edge-2> dedicated=edge:NoSchedule
+# Edge (ingress, public IP) — 3 node
+kubectl label node <edge-1> <edge-2> <edge-3> workload=edge
+kubectl taint node <edge-1> <edge-2> <edge-3> dedicated=edge:NoSchedule
 ```
 
 ### 4.2 Workload đọc nhãn/taint ở đâu
@@ -117,7 +125,9 @@ kubectl taint node <edge-1> <edge-2> dedicated=edge:NoSchedule
 | Postgres (CNPG) | `spec.affinity`: `nodeSelector workload=data` + toleration `dedicated=data` + `podAntiAffinityType: required`, `topologyKey hostname` → [`deploy/infra/postgres/cluster.yaml`](../../deploy/infra/postgres/cluster.yaml) |
 | Redis (OT Operator) | `spec.nodeSelector workload=data` + `tolerations dedicated=data` (Replication + Sentinel) → [`deploy/infra/redis/redis.yaml`](../../deploy/infra/redis/redis.yaml) |
 | Kafka (Strimzi) | `spec.template.pod`: `nodeAffinity workload=data` + `tolerations` + `podAntiAffinity hostname` → [`deploy/infra/kafka/kafka.yaml`](../../deploy/infra/kafka/kafka.yaml) |
-| Ingress (edge) | `nodeSelector workload=edge` + `tolerations dedicated=edge` + `hostNetwork=true` (cài qua Helm/ArgoCD) |
+| Ingress (edge) | `nodeSelector workload=edge` + `tolerations dedicated=edge` + `hostNetwork=true` (DaemonSet → 1 controller/node edge) → [`deploy/edge/ingress-nginx.values.yaml`](../../deploy/edge/ingress-nginx.values.yaml), cài bằng Helm lúc bootstrap (NGOÀI ArgoCD) |
+| Kafka Connect / Debezium | Strimzi `KafkaConnect`: `template.pod.nodeSelector workload=app` (chạy pool **app**, KHÔNG data) → [`deploy/infra/kafka/connect.yaml`](../../deploy/infra/kafka/connect.yaml) + connector trong [`connectors/`](../../deploy/infra/kafka/connectors) |
+| MinIO (object storage) | `nodeSelector workload=data` + toleration `dedicated=data` → [`deploy/infra/minio/minio.yaml`](../../deploy/infra/minio/minio.yaml) |
 
 > CloudNativePG & Redis Operator tự đặt anti-affinity cho primary/replica; ta chỉ cần đẩy chúng
 > vào pool data. Với Kafka phải khai báo anti-affinity *required* thủ công để mỗi broker 1 node.
@@ -153,6 +163,50 @@ apigateway 3 · auth 2 · catalog 2 · inventory **3** · order **3** · payment
 notification 2 · waitingroom 2 (inventory/order/apigateway cao hơn vì nằm trên hot path mua vé).
 Đặt `resources.requests/limits` sát sizing (không autoscale).
 
+### 5.5 Postgres connection pool — ngân sách phải đóng
+**Bẫy của "1 cluster Postgres dùng chung":** tổng connection mọi service pool phải ≤ `max_connections`
+của primary, nếu không flash sale sẽ gặp `FATAL: sorry, too many clients already`. Mặc định nguy hiểm:
+**16 pod có DB × Hikari mặc định 10 = 160 > 100** (mặc định CloudNativePG). → chốt cứng **cả hai đầu**:
+
+| Đầu | Cấu hình | Ở đâu |
+|---|---|---|
+| Postgres | `max_connections=200`, `superuser_reserved_connections=10` | [`deploy/infra/postgres/cluster.yaml`](../../deploy/infra/postgres/cluster.yaml) |
+| App | Hikari `maximum-pool-size` + `minimum-idle` (đặt **bằng nhau** = pre-warm), `connection-timeout=3000` | [`deploy/apps/<svc>.values.yaml`](../../deploy/apps) |
+
+**Ngân sách (pool × replica):**
+
+| Service | Pool | Replica | Tổng | Vai trò |
+|---|---|---|---|---|
+| order | 10 | 3 | 30 | hot path (saga + outbox) |
+| inventory | 10 | 3 | 30 | hot path (ghi SOLD) |
+| payment | 8 | 2 | 16 | gọi Stripe, ghi payment |
+| catalog | 8 | 2 | 16 | đọc nhiều (cache mạnh) |
+| auth | 8 | 2 | 16 | login/đăng ký |
+| ticket | 8 | 2 | 16 | sinh vé |
+| notification | 5 | 2 | 10 | consumer async |
+| **Tổng** | | | **134** | chừa ~66 cho replication/Debezium/admin/exporter |
+
+- `minimum-idle = maximum-pool-size` → pool **mở sẵn lúc khởi động**, KHÔNG phình giữa spike (tránh
+  cơn bão mở connection đúng lúc t=0).
+- `connection-timeout=3000` (3s) → pod đói connection **lỗi nhanh** thay vì treo thread 30s rồi sập dây chuyền.
+- Primary 4 vCPU chỉ chạy song song hiệu quả ~8–16 query; 134 connection phần lớn *idle* (~10 MB/connection
+  ≈ 1.3 GB, vừa với node 16 GB). Đọc nặng (catalog) có thể trỏ `ticketing-db-ro` để nhẹ primary.
+- **Khi nào cần hơn:** replica/service tăng vượt ngân sách → đặt **PgBouncer (CNPG `Pooler`, transaction mode)**
+  trước primary, gom hàng trăm "connection" phía app về vài chục backend connection. Chưa cần ở quy mô này.
+- apigateway & waitingroom **không có DB** → không tính vào ngân sách (apigateway tuyệt đối không JDBC).
+
+### 5.6 Object storage (MinIO) & Debezium Connect
+- **MinIO** thay managed S3 (on-prem không có): 1 instance + 1 PVC trên pool data, bucket `event-images`
+  (public — origin cho CDN) + `ticket-qr`. KHÔNG hot-path lúc flash sale → 1 instance đủ; cần HA thì
+  chuyển **MinIO distributed (≥4 drive)** hoặc **MinIO Operator (Tenant)**.
+- **Kafka Connect (Debezium)** chạy trên pool **app** (2 worker, khớp `debezium-connect×2` §3.1), KHÔNG
+  trên data — nó stateless, chỉ giữ offset trong Kafka. Mỗi service producer = 1 `KafkaConnector` CRD
+  (auth/order/payment), `tasks.max=1`; scale bằng tăng worker, task tự rebalance.
+- **Ngân sách slot Postgres:** mỗi connector giữ 1 replication slot + 1 walsender trên **cùng instance**
+  Postgres dùng chung → `max_replication_slots`/`max_wal_senders` (đặt **10/10** ở `cluster.yaml`) phải
+  ≥ số connector. 3 connector hiện tại → còn dư; >10 producer thì nâng. (Đây là ngân sách theo *instance*
+  vì 1 cluster dùng chung, không phải cluster-per-service.)
+
 ---
 
 ## 6. Mạng
@@ -160,10 +214,10 @@ notification 2 · waitingroom 2 (inventory/order/apigateway cao hơn vì nằm t
 ```text
             Internet (Stripe, người dùng)
                   │  HTTPS (TLS bắt buộc)
-        ┌─────────┴──────────┐
-        │  DNS round-robin    │   api.<domain> , webhook.<domain>
-        ▼                     ▼
-   edge-1 (public IP)   edge-2 (public IP)      ← chỉ edge phơi :80/:443
+        ┌─────────┴───────────────────┐
+        │  DNS round-robin            │   api.<domain> , webhook.<domain>
+        ▼            ▼                ▼
+   edge-1 (IP)  edge-2 (IP)     edge-3 (IP)     ← chỉ edge phơi :80/:443 (3 IP)
         │  ingress-nginx hostNetwork
         │   ├─ /            → Service apigateway:8080   (verify JWT, rate limit)
         │   └─ /webhooks/.. → Service payment:8086      (DMZ, verify chữ ký Stripe, KHÔNG JWT)
@@ -176,8 +230,11 @@ notification 2 · waitingroom 2 (inventory/order/apigateway cao hơn vì nằm t
   → Kafka replication, Postgres streaming, Redis traffic đi private (nhanh, không tốn bandwidth public).
 - **Chỉ edge** có public IP và mở 80/443. Data/app/master không phơi ra ngoài.
 - **TLS** ở Ingress (Stripe chỉ gửi tới HTTPS) — dùng cert-manager + Let's Encrypt hoặc cert tự quản.
-- **Edge HA**: 2 public IP + **DNS round-robin** (VPS cloud không có floating IP L2 thật). Nếu
-  provider có **Reserved IP**, gắn vào 1 edge và chuyển bằng script khi node chết.
+- **CDN** (dịch vụ ngoài, KHÔNG phải manifest cluster): đặt trước node edge, cache tài sản tĩnh —
+  seat map, ảnh sự kiện (origin = bucket MinIO `event-images` public), trang waiting-room — để cơn bão
+  tải trang lúc t=0 KHÔNG đập vào edge (giảm tải TLS/băng thông). Dev thay bằng `cloudflared` tunnel.
+- **Edge HA**: 3 public IP + **DNS round-robin** (VPS cloud không có floating IP L2 thật) — mất 1 edge
+  chỉ ảnh hưởng ~1/3 thay vì 1/2. Nếu provider có **Reserved IP**, gắn vào edge và chuyển bằng script khi node chết.
 - Chi tiết Ingress/NetworkPolicy/mesh: xem [`deployment-k8s.md`](deployment-k8s.md).
 
 ---
@@ -188,21 +245,24 @@ notification 2 · waitingroom 2 (inventory/order/apigateway cao hơn vì nằm t
 |---|---|---|
 | 1 master (còn 3) | control plane vẫn quorum (2/3) | ✅ |
 | 1 data | Kafka còn 2 broker (min ISR 2 vẫn ghi được); Postgres failover sang replica; Redis Sentinel bầu master mới | ✅ (vài giây–chục giây) |
-| 1 app | pod dời sang app node còn lại (anti-affinity mềm, có chỗ) | ✅ |
-| 1 edge | DNS round-robin còn IP kia; ~50% request lỗi tới khi client/DNS loại IP chết | ⚠️ một phần |
+| 1 app (còn 3) | pod dời sang app node còn lại (anti-affinity mềm, có chỗ) | ✅ |
+| 1 edge (còn 2) | DNS round-robin còn 2 IP; ~1/3 request lỗi tới khi client/DNS loại IP chết | ⚠️ một phần |
 
 > Điểm yếu còn lại là **edge** (giới hạn của VPS cloud không có LB/VIP thật). Chấp nhận DNS RR,
-> hoặc đặt managed LB của provider trước 2 edge **nếu** chịu lệch ràng buộc "no managed cloud".
+> hoặc đặt managed LB của provider trước 3 edge **nếu** chịu lệch ràng buộc "no managed cloud".
 
 ---
 
 ## 8. Thứ tự bootstrap (khớp `deploy/`)
 
-1. Dựng cụm K8s (3 master + workers), gắn **nhãn/taint** (§4.1), bật VPC private.
-2. Cài **ArgoCD**, **ingress-nginx hostNetwork** (pool edge), **cert-manager**.
+1. Dựng cụm K8s (3 master + 4 app + 3 data + 3 edge), gắn **nhãn/taint** (§4.1), bật VPC private.
+2. Cài bằng **Helm (NGOÀI ArgoCD)**: **ArgoCD**; **ingress-nginx hostNetwork** pool edge
+   ([`deploy/edge/ingress-nginx.values.yaml`](../../deploy/edge/ingress-nginx.values.yaml)); **cert-manager**
+   + apply [`deploy/edge/cluster-issuer.yaml`](../../deploy/edge/cluster-issuer.yaml) (sửa `email` trước).
 3. `kubectl apply` các App ArgoCD: `infra-operators` (wave −2) → `infra-resources` (wave −1) →
    `applicationset` (app, wave 0) → `extras-app` (Ingress). Xem [`deploy/README.md`](../../deploy/README.md).
 4. Tạo tay 2 secret: `payment-stripe`, `auth-jwt` (DB do CloudNativePG tự sinh `ticketing-db-app`).
-5. Trỏ DNS `api.<domain>` + `webhook.<domain>` → public IP các node edge; đăng ký webhook ở Stripe.
+5. Trỏ DNS `api.<domain>` + `webhook.<domain>` → **3 bản ghi A round-robin** vào public IP node edge
+   (xem [`deploy/README.md`](../../deploy/README.md) §DNS); đăng ký webhook ở Stripe.
 
 CI/CD sau đó: GitHub Actions build+push image (Docker Hub, tạm) → bump tag → ArgoCD sync.

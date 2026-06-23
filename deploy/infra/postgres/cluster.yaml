@@ -30,6 +30,12 @@ spec:
       wal_level: logical              # Debezium CDC (outbox) cần logical decoding
       max_replication_slots: "10"
       max_wal_senders: "10"
+      # Ngân sách connection cho "1 cluster dùng chung": tổng Hikari pool mọi service ≤ giá trị này.
+      # 16 pod có DB × pool mặc định 10 = 160 > 100 (mặc định) → đặt 200, chừa ~66 cho
+      # replication/Debezium/admin/exporter. Pool từng service chốt ở deploy/apps/<svc>.values.yaml.
+      # (Xem cluster-topology.md §5.5.)
+      max_connections: "200"
+      superuser_reserved_connections: "10"
   bootstrap:
     initdb:
       database: app

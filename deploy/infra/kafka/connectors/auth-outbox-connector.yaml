@@ -1,0 +1,40 @@
+# Debezium outbox connector cho service AUTH. Strimzi reconcile (KafkaConnector CRD).
+# Trỏ vào database "auth" trong cluster Postgres dùng chung (ticketing-db-rw), bảng public.outbox.
+# slot.name/publication.name BẮT BUỘC duy nhất giữa các connector (xem outbox-debezium.md §7.3).
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnector
+metadata:
+  name: auth-outbox-connector
+  namespace: ticketing
+  labels:
+    strimzi.io/cluster: ticketing-connect
+spec:
+  class: io.debezium.connector.postgresql.PostgresConnector
+  tasksMax: 1
+  config:
+    database.hostname: ticketing-db-rw
+    database.port: "5432"
+    database.user: "${secrets:/opt/kafka/external-configuration/db-creds:username}"
+    database.password: "${secrets:/opt/kafka/external-configuration/db-creds:password}"
+    database.dbname: auth
+    topic.prefix: auth
+    plugin.name: pgoutput
+    slot.name: auth_outbox_slot
+    publication.name: auth_outbox_pub
+    publication.autocreate.mode: filtered
+    table.include.list: public.outbox
+    snapshot.mode: never
+    tombstones.on.delete: "false"
+    heartbeat.interval.ms: "10000"
+    transforms: outbox
+    transforms.outbox.type: io.debezium.transforms.outbox.EventRouter
+    transforms.outbox.table.field.event.id: id
+    transforms.outbox.table.field.event.key: aggregate_id
+    transforms.outbox.table.field.event.payload: payload
+    transforms.outbox.table.expand.json.payload: "true"
+    transforms.outbox.route.by.field: aggregate_type
+    transforms.outbox.route.topic.replacement: "${routedByValue}.events"
+    transforms.outbox.table.fields.additional.placement: "event_type:header:eventType"
+    key.converter: org.apache.kafka.connect.storage.StringConverter
+    value.converter: org.apache.kafka.connect.json.JsonConverter
+    value.converter.schemas.enable: "false"

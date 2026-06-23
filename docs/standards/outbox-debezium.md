@@ -249,9 +249,10 @@ Mỗi connector chỉ khác nhau ~5 field, phần còn lại (`transforms.outbox
 - **Dev (compose):** `connect-init` lặp đăng ký mọi `infra/debezium/*.json` (idempotent:
   201 tạo mới / 409 đã có). Thêm producer = thả file JSON + thêm `<svc>: service_healthy`
   vào `depends_on` của `connect-init` (để bảng `outbox` tồn tại trước khi tạo publication).
-- **Prod (K8s/Strimzi):** mỗi service ship một **`KafkaConnector` CRD** riêng
-  (`<svc>/deploy/debezium/<svc>-outbox-connector.yaml`); Strimzi operator tự reconcile —
-  khai báo, GitOps, không POST tay.
+- **Prod (K8s/Strimzi):** một `KafkaConnect` cluster (`deploy/infra/kafka/connect.yaml`) +
+  mỗi service một **`KafkaConnector` CRD** trong `deploy/infra/kafka/connectors/<svc>-outbox-connector.yaml`;
+  Strimzi operator tự reconcile — khai báo, GitOps, không POST tay. DB user/pass đọc từ secret
+  `ticketing-db-app` qua DirectoryConfigProvider (không hardcode như JSON dev).
 
 **Hạ tầng dùng chung & giới hạn:**
 - **Một Kafka Connect cluster chạy N connector.** Mỗi outbox connector `tasks.max=1` (1 bảng)
@@ -259,7 +260,9 @@ Mỗi connector chỉ khác nhau ~5 field, phần còn lại (`transforms.outbox
 - **Postgres slot/walsender:** mỗi connector giữ 1 slot + 1 walsender trên DB của nó.
   - *Dev* (một instance nhiều DB): ngân sách theo **instance** → `max_replication_slots` /
     `max_wal_senders` (hiện **10/10** trong compose) phải ≥ số connector; >10 service thì nâng.
-  - *Prod* (DB-per-service qua CloudNativePG): cô lập, mỗi cluster chỉ cần `wal_level=logical`.
+  - *Prod* (**1 cluster CloudNativePG dùng chung**, 7 database — không phải cluster-per-service):
+    slot/walsender vẫn theo **instance** như dev → `max_replication_slots`/`max_wal_senders` đặt
+    **10/10** trong `deploy/infra/postgres/cluster.yaml` phải ≥ số connector; >10 producer thì nâng.
 - **Topic:** dev auto-create; prod nên **pre-create** `<aggregateType>.events` với số
   partition (ordering theo key) + replication factor mong muốn.
 

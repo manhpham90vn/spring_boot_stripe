@@ -6,6 +6,11 @@ image:
   tag: latest
 config:
   SPRING_DATASOURCE_URL: jdbc:postgresql://ticketing-db-rw:5432/catalog
+  # Đọc nhiều ghi ít (cache mạnh). Pool chốt cứng (xem cluster-topology.md §5.5). 2 replica × 8 = 16.
+  # Có thể trỏ đọc nặng sang ticketing-db-ro để nhẹ primary.
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "8"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "8"
+  SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: "3000"
   JWK_SET_URI: http://auth:8081/internal/jwks
   JWT_ISSUER: auth
   SERVICES_INVENTORY_URL: http://inventory:8083

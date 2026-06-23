@@ -1,0 +1,104 @@
+# Object storage tự host (on-prem KHÔNG có managed S3): tương đương minio + minio-init ở
+# docker-compose. 2 bucket: event-images (poster/seat-map tĩnh, public download — origin cho CDN)
+# + ticket-qr (mã QR vé đã phát). App dùng S3 API qua "http://minio:9000".
+#
+# ĐƠN GIẢN HOÁ: 1 instance (Deployment + 1 PVC) — đủ cho quy mô này, KHÔNG HA object store.
+# Khi cần HA/đa node: chuyển sang MinIO distributed (≥4 drive) hoặc MinIO Operator (Tenant CR).
+# Root credential KHÔNG commit → secret "minio-creds" tạo tay (xem deploy/secrets).
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: ticketing
+  labels: { app: minio }
+spec:
+  selector: { app: minio }
+  ports:
+    - { name: s3, port: 9000, targetPort: 9000 }
+    - { name: console, port: 9001, targetPort: 9001 }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: ticketing
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi            # chỉnh theo dung lượng ảnh/QR thật
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: ticketing
+  labels: { app: minio }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # 1 PVC RWO → không rolling 2 pod cùng mount
+  selector:
+    matchLabels: { app: minio }
+  template:
+    metadata:
+      labels: { app: minio }
+    spec:
+      # Stateful, I/O → ghim pool data (giống Postgres/Redis/Kafka). data-3 đang dư chỗ (topology §3.2).
+      nodeSelector: { workload: data }
+      tolerations:
+        - { key: dedicated, operator: Equal, value: data, effect: NoSchedule }
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2024-09-22T00-33-43Z   # pin version, đừng dùng :latest ở prod
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: { secretKeyRef: { name: minio-creds, key: root-user } }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: minio-creds, key: root-password } }
+          ports:
+            - { containerPort: 9000 }
+            - { containerPort: 9001 }
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: 9000 }
+            initialDelaySeconds: 10
+          livenessProbe:
+            httpGet: { path: /minio/health/live, port: 9000 }
+            initialDelaySeconds: 20
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: minio-data }
+---
+# Tạo bucket 1 lần (idempotent): event-images (public download) + ticket-qr.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: ticketing
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector: { workload: data }
+      tolerations:
+        - { key: dedicated, operator: Equal, value: data, effect: NoSchedule }
+      containers:
+        - name: mc
+          image: minio/mc:RELEASE.2024-09-16T17-43-14Z
+          env:
+            - name: ROOT_USER
+              valueFrom: { secretKeyRef: { name: minio-creds, key: root-user } }
+            - name: ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: minio-creds, key: root-password } }
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              until mc alias set local http://minio:9000 "$ROOT_USER" "$ROOT_PASSWORD"; do
+                echo 'waiting for MinIO...'; sleep 2; done
+              mc mb -p local/event-images
+              mc mb -p local/ticket-qr
+              mc anonymous set download local/event-images
+              echo 'buckets ready'

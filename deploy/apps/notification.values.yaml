@@ -6,6 +6,10 @@ image:
   tag: latest
 config:
   SPRING_DATASOURCE_URL: jdbc:postgresql://ticketing-db-rw:5432/notification
+  # Consumer async (đồng thời thấp). Pool nhỏ (xem cluster-topology.md §5.5). 2 replica × 5 = 10.
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "5"
+  SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: "3000"
   # Prod: trỏ SMTP thật. Dev/compose dùng mailpit:1025.
   SPRING_MAIL_HOST: mailpit
   SPRING_MAIL_PORT: "1025"
