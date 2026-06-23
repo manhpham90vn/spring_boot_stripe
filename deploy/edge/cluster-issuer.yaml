@@ -1,0 +1,17 @@
+# TLS ở Ingress (cluster-topology.md §6): Stripe CHỈ gửi webhook tới HTTPS → cert bắt buộc.
+# cert-manager + Let's Encrypt, xác thực qua HTTP-01 solver đi qua chính ingress-nginx edge.
+# Áp dụng SAU khi cài cert-manager (bootstrap). Sửa `email` trước khi apply.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: REPLACE_ME@example.com        # email đăng ký ACME (nhận cảnh báo hết hạn)
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx                 # HTTP-01 challenge đi qua ingress-nginx edge

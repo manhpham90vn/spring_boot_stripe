@@ -1,0 +1,10 @@
+name: waitingroom
+port: 8089
+replicas: 2
+image:
+  repo: docker.io/REPLACE_ME/waitingroom
+  tag: latest
+# WebFlux + Redis, KHÔNG có DB → không nạp ticketing-db.
+config:
+  JWK_SET_URI: http://auth:8081/internal/jwks
+  ROUTE_INVENTORY_URI: http://inventory:8083

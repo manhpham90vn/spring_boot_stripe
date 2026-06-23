@@ -310,8 +310,8 @@ management.otlp.tracing.endpoint=${OTLP_TRACING_ENDPOINT:http://localhost:4318/v
 
 ## 13. Thứ tự triển khai (theo CLAUDE.md)
 
-1. **Phase 0:** hạ tầng dùng chung (K8s + Operator PG/Redis/Kafka, Ingress + MetalLB,
-   observability) + API Gateway.
+1. **Phase 0:** hạ tầng dùng chung (K8s + Operator PG/Redis/Kafka, ingress-nginx `hostNetwork`
+   trên node edge — KHÔNG MetalLB trên VPS cloud, observability) + API Gateway.
 2. **auth (1) + catalog (2)** — mở khoá phần còn lại.
 3. **Lát cắt dọc happy path:** inventory (GA) → payment (1 tài khoản) → order. Cột mốc:
    tiền chạy end-to-end.

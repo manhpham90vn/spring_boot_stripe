@@ -1,0 +1,6 @@
+apiVersion: v2
+name: service
+description: Chart generic cho 1 microservice Spring Boot (Deployment + Service + ConfigMap).
+type: application
+version: 0.1.0
+appVersion: "0.0.1"

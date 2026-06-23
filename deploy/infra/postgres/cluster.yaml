@@ -1,0 +1,47 @@
+# 1 cluster Postgres dùng chung (nhẹ phần cứng): 1 primary + 1 replica.
+# Database-per-service ở mức LOGICAL: 7 database tách biệt trong cùng cluster,
+# cùng role "app". CloudNativePG tự sinh secret "ticketing-db-app" (username/password)
+# + service "ticketing-db-rw" (ghi/đọc qua primary) và "ticketing-db-ro" (chỉ đọc replica).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ticketing-db
+  namespace: ticketing
+spec:
+  instances: 2                # 1 primary + 1 replica (HA cơ bản + offload đọc)
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  primaryUpdateStrategy: unsupervised
+  # Ghim lên node pool data; bắt primary & replica nằm KHÁC node.
+  affinity:
+    nodeSelector:
+      workload: data
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: data
+        effect: NoSchedule
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+  storage:
+    size: 10Gi                # chỉnh theo dung lượng thật
+  postgresql:
+    parameters:
+      wal_level: logical              # Debezium CDC (outbox) cần logical decoding
+      max_replication_slots: "10"
+      max_wal_senders: "10"
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      # Tạo 7 database riêng cho từng service (chạy 1 lần lúc bootstrap, quyền superuser).
+      postInitSQL:
+        - CREATE DATABASE auth OWNER app;
+        - CREATE DATABASE catalog OWNER app;
+        - CREATE DATABASE inventory OWNER app;
+        - CREATE DATABASE "order" OWNER app;
+        - CREATE DATABASE payment OWNER app;
+        - CREATE DATABASE ticket OWNER app;
+        - CREATE DATABASE notification OWNER app;
+  monitoring:
+    enablePodMonitor: true            # Prometheus scrape metrics Postgres

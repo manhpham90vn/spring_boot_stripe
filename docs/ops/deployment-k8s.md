@@ -3,25 +3,29 @@
 > **Mục đích:** mô tả cách hệ thống lên K8s thuần tự quản (on-prem), và cung cấp **manifest
 > mẫu** cho các POLICY thuộc về ứng dụng (Ingress, NetworkPolicy) — phần mà repo nên giữ dù
 > hạ tầng nền (Operator/Helm) là Phase 0 ngoài repo. Ràng buộc gốc: [`/CLAUDE.md`](../../CLAUDE.md).
-> Liên quan: [`SECURITY-ACCESS-CONTROL.md`](../standards/SECURITY-ACCESS-CONTROL.md),
+> Liên quan: [`cluster-topology.md`](cluster-topology.md) (node/pool/sizing/mạng — đọc trước để hình dung cụm),
+> [`SECURITY-ACCESS-CONTROL.md`](../standards/SECURITY-ACCESS-CONTROL.md),
 > [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md), [`payment-stripe-flow.md`](../flows/payment-stripe-flow.md).
 
 ---
 
 ## 1. Ràng buộc nền
 - **K8s thuần tự quản**, KHÔNG dùng managed cloud service.
-- **On-prem không có cloud LB** → dùng **MetalLB** + **Ingress Controller**.
-- **Không autoscale** (HPA tuỳ chọn nhưng phần cứng cố định) → sizing bền vững.
-- **Database-per-service**: mỗi service một cụm PostgreSQL riêng.
+- **Lớp vào**: VPS cloud (Vultr/EC2) **không dùng được MetalLB** (cloud ảo hoá ARP) → dùng
+  **ingress-nginx `hostNetwork`** trên node edge (public IP) + DNS. MetalLB chỉ hợp bare-metal/LAN
+  thật. Chi tiết & topology node: [`cluster-topology.md`](cluster-topology.md).
+- **Không autoscale** (phần cứng cố định) → sizing bền vững, replica cố định.
+- **Database-per-service (mức logical)**: **1 cluster Postgres dùng chung** (1 primary + 1 replica),
+  7 database riêng — không mỗi service một cụm.
 
-## 2. Hạ tầng nền (Phase 0 — qua Operator/Helm, ngoài repo)
+## 2. Hạ tầng nền (qua Operator/Helm; CR nằm trong [`/deploy/infra`](../../deploy/infra), ArgoCD quản)
 | Thành phần | Cách dựng |
 |-----------|-----------|
-| PostgreSQL (mỗi service một cụm) | **CloudNativePG** operator; bật `wal_level=logical` cho Debezium |
-| Redis (HA) | Redis operator (Cluster/Sentinel) |
-| Kafka + Kafka Connect/Debezium | **Strimzi** operator |
-| Vào mạng | **Ingress Controller** + **MetalLB** (cấp IP on-prem) |
-| Observability | Prometheus + Grafana + Loki + OpenTelemetry collector |
+| PostgreSQL (1 cluster, 7 database) | **CloudNativePG** operator; `wal_level=logical` cho Debezium |
+| Redis (HA) | **OT Redis Operator** — 1 master + 1 replica + Sentinel |
+| Kafka + Kafka Connect/Debezium | **Strimzi** operator (KRaft, 3 broker) |
+| Vào mạng | **ingress-nginx `hostNetwork`** trên node edge (KHÔNG MetalLB trên VPS cloud) |
+| Observability | **kube-prometheus-stack** (Prometheus + Grafana) + Loki + OpenTelemetry |
 
 ## 3. Đường vào (Ingress) — 3 lối tách bạch
 

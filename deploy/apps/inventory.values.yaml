@@ -1,0 +1,14 @@
+name: inventory
+port: 8083
+# Service tranh chấp cao nhất khi flash sale → cấp nhiều replica hơn.
+replicas: 3
+image:
+  repo: docker.io/REPLACE_ME/inventory
+  tag: latest
+config:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://ticketing-db-rw:5432/inventory
+env:
+  - name: SPRING_DATASOURCE_USERNAME
+    valueFrom: { secretKeyRef: { name: ticketing-db-app, key: username } }
+  - name: SPRING_DATASOURCE_PASSWORD
+    valueFrom: { secretKeyRef: { name: ticketing-db-app, key: password } }

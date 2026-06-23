@@ -1,0 +1,35 @@
+# Lớp VÀO (edge) — ingress-nginx chạy hostNetwork trên pool edge.
+# Vì sao KHÔNG MetalLB: trên VPS cloud (Vultr/EC2) ARP bị hypervisor ảo hoá → MetalLB L2
+# không "chiếm" được IP, BGP không peer trong VPC chuẩn. Giải pháp nhất quán & $0: bind
+# thẳng :80/:443 trên public IP của node edge bằng hostNetwork, DNS round-robin 2 node edge.
+# (Tham chiếu: cluster-topology.md §1, §6; deployment-k8s.md.)
+#
+# Cài (bootstrap, KHÔNG do ArgoCD quản — xem README §Bootstrap):
+#   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#   helm install ingress-nginx ingress-nginx/ingress-nginx \
+#     -n ingress-nginx --create-namespace -f deploy/edge/ingress-nginx.values.yaml
+controller:
+  kind: DaemonSet                     # 1 controller mỗi node edge (2 edge → 2 IP công khai)
+  hostNetwork: true                   # bind :80/:443 thẳng trên IP node edge, không cần LB
+  hostPort:
+    enabled: true
+  dnsPolicy: ClusterFirstWithHostNet  # pod hostNetwork vẫn resolve được DNS nội bộ K8s
+  service:
+    enabled: false                    # KHÔNG tạo Service type=LoadBalancer (VPS cloud không có L2 LB)
+  # Ghim controller lên pool edge (node có public IP); data/app/master bị taint/không có nhãn nên tránh.
+  nodeSelector:
+    workload: edge
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: edge
+      effect: NoSchedule
+  ingressClassResource:
+    name: nginx
+    default: true                     # Ingress không khai ingressClassName cũng dùng nginx
+  admissionWebhooks:
+    enabled: true
+  metrics:
+    enabled: true                     # Prometheus scrape (kube-prometheus-stack)
+    serviceMonitor:
+      enabled: true

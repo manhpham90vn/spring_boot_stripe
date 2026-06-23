@@ -30,11 +30,12 @@ Chỉ mục theo thư mục. Ràng buộc gốc (bất biến) ở [`/CLAUDE.md`
 - [**01-payment-real-stripe.md**](impl/01-payment-real-stripe.md) — thanh toán Stripe thật (card + async Konbini/Furikomi), migration + sửa file + acceptance.
 
 ## `ops/` — vận hành
-- [**deployment-k8s.md**](ops/deployment-k8s.md) — Ingress, NetworkPolicy (rào `/internal`), Operator, Strimzi.
+- [**cluster-topology.md**](ops/cluster-topology.md) — kiến trúc cụm: số node, pool master/data/app/edge, ghim workload (taint/affinity), sizing, mạng public/private, vì sao không MetalLB trên VPS cloud.
+- [**deployment-k8s.md**](ops/deployment-k8s.md) — Ingress, NetworkPolicy (rào `/internal`), Operator, Strimzi, service mesh.
 
 ---
 
 ### Lộ trình đọc theo vai trò
 - **Mới vào dự án:** `overview/dev-runbook` → `overview/architecture` → `standards/SECURITY-ACCESS-CONTROL` → `standards/API-CONVENTIONS`.
 - **Sắp code lát cắt mua vé:** `services/` (03,04,05) → `flows/saga-purchase-flow` → `flows/inventory-no-oversell` → `flows/payment-stripe-flow`(+`payment-ref/`) → `impl/01-payment-real-stripe`.
-- **Lên prod / hạ tầng:** `ops/deployment-k8s` → `standards/resilience-flash-sale` → `standards/outbox-debezium`.
+- **Lên prod / hạ tầng:** `ops/cluster-topology` → `ops/deployment-k8s` → `standards/resilience-flash-sale` → `standards/outbox-debezium`.

@@ -1,0 +1,21 @@
+# Prometheus scrape /actuator/prometheus của mọi service có label part-of=ticketing.
+# Label "release: kube-prom" để Prometheus Operator (kube-prometheus-stack) nhận diện
+# (đổi cho khớp release name khi cài chart). Grafana đã đi kèm trong kube-prometheus-stack.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ticketing-services
+  namespace: ticketing
+  labels:
+    release: kube-prom
+spec:
+  namespaceSelector:
+    matchNames:
+      - ticketing
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: ticketing
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s

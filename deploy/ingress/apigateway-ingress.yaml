@@ -1,0 +1,27 @@
+# Traffic nghiệp vụ vào qua đây → apigateway (cửa vào duy nhất).
+# Đứng sau ingress-nginx chạy hostNetwork trên pool edge (KHÔNG MetalLB trên VPS cloud —
+# xem deploy/edge/ingress-nginx.values.yaml). DNS round-robin các public IP node edge.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apigateway
+  namespace: ticketing
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod   # cert-manager tự xin/gia hạn TLS
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.ticketing.local]   # đổi sang domain thật (khớp host bên dưới)
+      secretName: apigateway-tls     # cert-manager tự sinh secret này
+  rules:
+    - host: api.ticketing.local      # đổi sang domain thật
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: apigateway
+                port:
+                  number: 8080

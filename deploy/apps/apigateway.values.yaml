@@ -1,0 +1,17 @@
+name: apigateway
+port: 8080
+# Cửa vào nghiệp vụ → cấp nhiều replica.
+replicas: 3
+image:
+  repo: docker.io/REPLACE_ME/apigateway
+  tag: latest
+# WebFlux/Netty thuần, TUYỆT ĐỐI KHÔNG DB → không nạp ticketing-db.
+config:
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://auth:8081/internal/jwks
+  ROUTE_AUTH_URI: http://auth:8081
+  ROUTE_CATALOG_URI: http://catalog:8082
+  ROUTE_INVENTORY_URI: http://inventory:8083
+  ROUTE_ORDER_URI: http://order:8084
+  ROUTE_PAYMENT_URI: http://payment:8086
+  ROUTE_TICKET_URI: http://ticket:8087
+  ROUTE_WAITINGROOM_URI: http://waitingroom:8089

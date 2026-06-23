@@ -1,0 +1,27 @@
+# "Reverse proxy DMZ" cho webhook Stripe: vào thẳng payment, BỎ QUA apigateway,
+# KHÔNG validate JWT (payment tự verify chữ ký Stripe). Stripe phải gọi ngược được vào đây.
+# Stripe CHỈ gửi tới HTTPS → bắt buộc TLS (cert-manager). Vào qua ingress-nginx edge.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stripe-webhook
+  namespace: ticketing
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod   # cert-manager tự xin/gia hạn TLS
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [webhook.ticketing.local]   # đổi sang domain thật (khớp host bên dưới)
+      secretName: stripe-webhook-tls     # cert-manager tự sinh secret này
+  rules:
+    - host: webhook.ticketing.local   # domain công khai Stripe gọi tới
+      http:
+        paths:
+          - path: /webhooks/stripe
+            pathType: Prefix
+            backend:
+              service:
+                name: payment
+                port:
+                  number: 8086

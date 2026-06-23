@@ -1,0 +1,60 @@
+# Default values — bị override bởi deploy/apps/<svc>.values.yaml.
+name: ""          # tên service = tên Deployment/Service (vd: auth)
+port: 8080        # cổng container = cổng Spring Boot
+replicas: 2       # CỐ ĐỊNH. On-prem không autoscale (không HPA) — Waiting Room hấp thụ spike.
+
+image:
+  repo: ""        # vd: docker.io/<dockerhub-user>/auth
+  tag: latest     # CI bump giá trị này
+  pullPolicy: IfNotPresent
+
+# imagePullSecret cho Docker Hub private repo (bỏ trống nếu repo public).
+imagePullSecrets: []
+# - name: dockerhub
+
+# Env không nhạy cảm chung cho mọi service → gộp vào ConfigMap.
+# Tên Service hạ tầng khớp với CR Operator trong deploy/infra/:
+#   - Redis (OT Operator, Sentinel HA): service "redis-sentinel:26379", master "myMaster"
+#   - Kafka (Strimzi): bootstrap "ticketing-kafka-bootstrap:9092"
+# Prometheus scrape /actuator/prometheus → bật sẵn endpoint.
+sharedConfig:
+  SPRING_DATA_REDIS_SENTINEL_MASTER: "myMaster"
+  SPRING_DATA_REDIS_SENTINEL_NODES: "redis-sentinel:26379"
+  SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS: "ticketing-kafka-bootstrap:9092"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+
+# Env riêng từng service (override/bổ sung sharedConfig).
+config: {}
+
+# Env dạng valueFrom (đọc từ secret/CR), vd user/pass DB do CloudNativePG sinh.
+env: []
+# - name: SPRING_DATASOURCE_USERNAME
+#   valueFrom: { secretKeyRef: { name: ticketing-db-app, key: username } }
+
+# Tham chiếu Secret/ConfigMap có sẵn nạp thẳng vào env (vd Stripe key).
+envFrom: []
+# - secretRef: { name: payment-stripe }
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "768Mi"
+  limits:
+    memory: "1Gi"
+
+# Probe theo Spring Boot Actuator (group readiness/liveness tự bật khi chạy trên k8s).
+health:
+  readinessPath: /actuator/health/readiness
+  livenessPath: /actuator/health/liveness
+  initialDelaySeconds: 30
+
+# Volume tuỳ chọn (vd auth mount JWT keys từ Secret).
+volumes: []
+volumeMounts: []
+
+# Lập lịch: app chạy trên node pool "workload=app". Node data bị taint nên app
+# không tràn vào (không cần toleration). Replica cùng service tự rải ra các node.
+nodeSelector:
+  workload: app
+tolerations: []

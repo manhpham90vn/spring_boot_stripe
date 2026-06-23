@@ -1,0 +1,16 @@
+name: catalog
+port: 8082
+replicas: 2
+image:
+  repo: docker.io/REPLACE_ME/catalog
+  tag: latest
+config:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://ticketing-db-rw:5432/catalog
+  JWK_SET_URI: http://auth:8081/internal/jwks
+  JWT_ISSUER: auth
+  SERVICES_INVENTORY_URL: http://inventory:8083
+env:
+  - name: SPRING_DATASOURCE_USERNAME
+    valueFrom: { secretKeyRef: { name: ticketing-db-app, key: username } }
+  - name: SPRING_DATASOURCE_PASSWORD
+    valueFrom: { secretKeyRef: { name: ticketing-db-app, key: password } }

@@ -1,0 +1,26 @@
+# Đồng bộ CR hạ tầng trong deploy/infra/ (Postgres clusters, Redis, Kafka, ServiceMonitor).
+# Sync-wave -1: sau Operator (đã tạo CRD), trước app. Retry để chờ CRD sẵn sàng.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ticketing-infra
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/REPLACE_ME/spring_boot_stripe.git
+    targetRevision: main
+    path: deploy/infra
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ticketing
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+    retry:
+      limit: 10
+      backoff: { duration: 15s, factor: 2, maxDuration: 5m }

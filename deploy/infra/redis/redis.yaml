@@ -1,0 +1,50 @@
+# Redis HA bằng OT Redis Operator: 1 master + replica, có Sentinel.
+# App dùng Spring Data Redis Sentinel: master "myMaster", nodes "redis-sentinel:26379".
+# (VERIFY tên service/CRD theo version operator bạn cài.)
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: redis
+  namespace: ticketing
+spec:
+  clusterSize: 2                 # 1 master + 1 replica
+  # Ghim lên node pool data (VERIFY tên field theo version operator).
+  nodeSelector:
+    workload: data
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: data
+      effect: NoSchedule
+  kubernetesConfig:
+    image: quay.io/opstree/redis:v7.0.15
+    imagePullPolicy: IfNotPresent
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisSentinel
+metadata:
+  name: redis-sentinel
+  namespace: ticketing
+spec:
+  clusterSize: 3
+  nodeSelector:
+    workload: data
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: data
+      effect: NoSchedule
+  redisSentinelConfig:
+    redisReplicationName: redis    # trỏ tới RedisReplication ở trên để auto-discover master
+    masterGroupName: myMaster
+    quorum: "2"
+  kubernetesConfig:
+    image: quay.io/opstree/redis-sentinel:v7.0.15
+    imagePullPolicy: IfNotPresent

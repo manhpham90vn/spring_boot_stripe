@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-config
+  labels:
+    {{- include "service.labels" . | nindent 4 }}
+data:
+  SERVER_PORT: {{ .Values.port | quote }}
+  {{- range $k, $v := .Values.sharedConfig }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- range $k, $v := .Values.config }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

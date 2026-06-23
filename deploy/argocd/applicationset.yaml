@@ -1,0 +1,47 @@
+# 1 ApplicationSet sinh ra 9 Application (mỗi service 1 cái), tất cả dùng chung
+# chart deploy/charts/service + file values riêng deploy/apps/<name>.values.yaml.
+#
+# Dùng multi-source: source "values" (ref) cho phép valueFiles nằm NGOÀI thư mục chart.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ticketing
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - { name: apigateway }
+          - { name: auth }
+          - { name: catalog }
+          - { name: inventory }
+          - { name: order }
+          - { name: payment }
+          - { name: ticket }
+          - { name: notification }
+          - { name: waitingroom }
+  template:
+    metadata:
+      name: "{{ .name }}"
+    spec:
+      project: default
+      sources:
+        - repoURL: &repo https://github.com/REPLACE_ME/spring_boot_stripe.git
+          targetRevision: main
+          path: deploy/charts/service
+          helm:
+            valueFiles:
+              - $values/deploy/apps/{{ .name }}.values.yaml
+        - repoURL: *repo
+          targetRevision: main
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: ticketing
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

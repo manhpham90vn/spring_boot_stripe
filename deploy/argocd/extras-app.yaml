@@ -1,0 +1,20 @@
+# Application phụ: đồng bộ các manifest cluster-scoped không nằm trong chart service
+# (Ingress apigateway + Ingress webhook Stripe). Secret KHÔNG để ở đây.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ticketing-extras
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/REPLACE_ME/spring_boot_stripe.git
+    targetRevision: main
+    path: deploy/ingress
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ticketing
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

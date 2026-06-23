@@ -10,8 +10,10 @@ bán trùng. Thanh toán qua Stripe.
   tự quản** (không dùng managed cloud service), Spring Boot (JVM).
 - **On-prem không autoscale** → phần cứng cố định, sizing cho throughput bền
   vững; Waiting Room hấp thụ spike. Đây là ràng buộc chi phối thiết kế.
-- **Database-per-service**: mỗi service sở hữu DB riêng (PostgreSQL). KHÔNG dùng
-  chung một DB.
+- **Database-per-service (mức logical)**: mỗi service sở hữu **database riêng**
+  (PostgreSQL) — service KHÔNG đụng vào database của service khác. Để tiết kiệm
+  phần cứng on-prem, các database này nằm chung **một cluster Postgres** (1 primary
+  + 1 replica, CloudNativePG), KHÔNG mỗi service một cluster riêng.
 - Không có ACID transaction xuyên service → dùng **Saga pattern (orchestration)**
   cho luồng mua vé, kèm bước bù trừ (compensating transaction).
 - Đảm bảo phát event không mất bằng **transactional outbox**.
@@ -26,8 +28,12 @@ bán trùng. Thanh toán qua Stripe.
   public key, không gọi Auth service mỗi request).
 - Service discovery + config: **K8s DNS + ConfigMap/Secret** (đã chọn K8s thuần
   → KHÔNG dùng Consul). Service gọi nhau qua DNS nội bộ `http://<svc>:<port>`.
-- Hot path / cache / khóa: Redis (cluster hoặc Sentinel cho HA)
-- Nguồn sự thật: PostgreSQL (mỗi service một DB, có replication)
+- Hot path / cache / khóa: Redis 1 master + 1 replica + Sentinel (HA; chỉ master
+  nhận write, các op hot path đều O(1) nên đủ tải — Waiting Room đã throttle spike)
+- Nguồn sự thật: PostgreSQL — **một cluster dùng chung** (1 primary + 1 replica),
+  mỗi service một database riêng trong cluster đó
+- Triển khai/CI-CD: GitHub Actions build+push image (Docker Hub, tạm) → ArgoCD
+  GitOps sync; Helm chart + manifest hạ tầng nằm trong `deploy/`
 - Message broker: Kafka (self-hosted)
 - Resilience: Resilience4j (circuit breaker, retry backoff, rate limiter)
 - Observability: Prometheus + Grafana, tracing OpenTelemetry, log Loki/ELK
@@ -48,10 +54,14 @@ bán trùng. Thanh toán qua Stripe.
 > `inventory/`, `order/`, `payment/`, `ticket/`, `notification/`, `waitingroom/`.
 > Mọi thành phần dưới đây đều trong phạm vi.
 
-### Hạ tầng dùng chung (dựng trên K8s qua Operator/Helm, không phải project trong repo)
-Cụm PostgreSQL/Redis/Kafka (Operator: CloudNativePG, Redis Operator, Strimzi),
-Ingress Controller + MetalLB (on-prem không có cloud LB), observability stack
-(Prometheus/Grafana/Loki, OpenTelemetry). Webhook Stripe vào qua **Ingress rule
+### Hạ tầng dùng chung (Operator/Helm; CR + manifest đặt trong `deploy/`, ArgoCD quản)
+PostgreSQL (CloudNativePG — **1 cluster dùng chung**, mỗi service 1 database),
+Redis (OT Operator — 1 master + 1 replica + Sentinel), Kafka (Strimzi KRaft),
+ingress-nginx chạy `hostNetwork` trên node edge (VPS cloud không dùng được MetalLB —
+xem `docs/ops/cluster-topology.md`), observability stack
+(Prometheus/Grafana qua kube-prometheus-stack, Loki, OpenTelemetry). Operator cài
+qua Helm; các CR (`Cluster`, `Kafka`, `RedisReplication`, `ServiceMonitor`...) nằm
+trong `deploy/infra/` do ArgoCD đồng bộ. Webhook Stripe vào qua **Ingress rule
 riêng** trỏ thẳng Payment service, **bỏ qua apigateway** (đây là "reverse proxy
 DMZ"), verify chữ ký Stripe chứ không phải JWT.
 

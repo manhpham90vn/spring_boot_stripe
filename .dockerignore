@@ -18,4 +18,12 @@ package.json
 
 infra/postgres
 infra/nginx
+infra/keys
+infra/debezium
 docker-compose.yml
+docker-compose.tools.yml
+load-tests
+deploy
+.github
+.env
+.env.example

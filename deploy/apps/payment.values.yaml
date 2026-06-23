@@ -1,0 +1,16 @@
+name: payment
+port: 8086
+replicas: 2
+image:
+  repo: docker.io/REPLACE_ME/payment
+  tag: latest
+config:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://ticketing-db-rw:5432/payment
+env:
+  - name: SPRING_DATASOURCE_USERNAME
+    valueFrom: { secretKeyRef: { name: ticketing-db-app, key: username } }
+  - name: SPRING_DATASOURCE_PASSWORD
+    valueFrom: { secretKeyRef: { name: ticketing-db-app, key: password } }
+envFrom:
+  - secretRef:
+      name: payment-stripe   # STRIPE_API_KEY, STRIPE_WEBHOOK_SECRET (tạo tay)

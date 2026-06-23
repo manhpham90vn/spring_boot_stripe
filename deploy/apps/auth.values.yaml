@@ -1,0 +1,24 @@
+name: auth
+port: 8081
+replicas: 2
+image:
+  repo: docker.io/REPLACE_ME/auth
+  tag: latest
+config:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://ticketing-db-rw:5432/auth
+  AUTH_JWT_PRIVATE_KEY_LOCATION: file:/keys/jwt-private.pem
+  AUTH_JWT_PUBLIC_KEY_LOCATION: file:/keys/jwt-public.pem
+# user/pass do CloudNativePG sinh trong secret <cluster>-app
+env:
+  - name: SPRING_DATASOURCE_USERNAME
+    valueFrom: { secretKeyRef: { name: ticketing-db-app, key: username } }
+  - name: SPRING_DATASOURCE_PASSWORD
+    valueFrom: { secretKeyRef: { name: ticketing-db-app, key: password } }
+volumeMounts:
+  - name: jwt-keys
+    mountPath: /keys
+    readOnly: true
+volumes:
+  - name: jwt-keys
+    secret:
+      secretName: auth-jwt
