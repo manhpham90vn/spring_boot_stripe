@@ -30,7 +30,7 @@ public class InternalWaitingroomController {
     /** Verify PASS: hạ nguồn (Order) gọi trước khi cho {@code POST /api/order}. */
     @GetMapping("/admission/{eventId}/check")
     public Mono<AdmissionCheckResponse> check(@PathVariable UUID eventId, @RequestParam String token) {
-        return waitingRoom.isAdmitted(eventId, token).map(AdmissionCheckResponse::new);
+        return waitingRoom.isAdmitted(eventId, token).map(admitted -> new AdmissionCheckResponse(admitted));
     }
 
     /** Đặt nhịp thả per-event (theo throughput thật của Order/Inventory/Stripe). */

@@ -38,7 +38,7 @@ public class InventoryClient {
         }
         return reactor.core.publisher.Flux.fromIterable(ticketTypes)
                 .flatMap(this::available)
-                .reduce(0, Integer::sum)
+                .reduce(0, (a, b) -> a + b)
                 .map(total -> total > 0)
                 .onErrorResume(ex -> {
                     log.warn("Hỏi tồn kho event {} lỗi ({}), tạm coi là CÒN", eventId, ex.toString());
