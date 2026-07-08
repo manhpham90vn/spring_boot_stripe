@@ -17,7 +17,8 @@ public interface OrderService {
 
     /**
      * Tiếp tục saga khi Payment báo kết quả: SUCCEEDED → chốt SOLD + PAID + phát vé;
-     * FAILED → nhả chỗ + PAYMENT_FAILED. Idempotent (chỉ tác động khi đơn còn AWAITING_PAYMENT).
+     * FAILED/CANCELED → hủy PI (nếu chưa) + nhả chỗ + PAYMENT_FAILED (hủy không được vì tiền
+     * đã/đang thu → giữ AWAITING_PAYMENT). Idempotent (chỉ tác động khi đơn còn AWAITING_PAYMENT).
      */
     void onPaymentSettled(PaymentSettledEvent event);
 

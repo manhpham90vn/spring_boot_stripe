@@ -1,5 +1,6 @@
 package com.manhpham.payment.handle;
 
+import com.manhpham.payment.utils.exception.PaymentNotCancellableException;
 import com.manhpham.payment.utils.exception.PaymentNotFoundException;
 import com.manhpham.common.core.response.ApiError;
 import org.springframework.http.HttpStatus;
@@ -19,6 +20,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleNotFound(PaymentNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(HttpStatus.NOT_FOUND.value(), "Not Found", ex.getMessage()));
+    }
+
+    @ExceptionHandler(PaymentNotCancellableException.class)
+    public ResponseEntity<ApiError> handleNotCancellable(PaymentNotCancellableException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

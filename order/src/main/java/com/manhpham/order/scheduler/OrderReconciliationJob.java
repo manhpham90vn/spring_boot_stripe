@@ -42,7 +42,8 @@ public class OrderReconciliationJob {
         for (Order o : orders.findByStatusAndUpdatedAtBefore(OrderStatus.AWAITING_PAYMENT, cutoff)) {
             try {
                 PaymentClient.ChargeResult cr = payment.byOrder(o.getId());
-                if ("SUCCEEDED".equals(cr.status()) || "FAILED".equals(cr.status())) {
+                if ("SUCCEEDED".equals(cr.status()) || "FAILED".equals(cr.status())
+                        || "CANCELED".equals(cr.status())) {
                     log.warn("Reconcile đơn kẹt {} → payment {} → tiếp tục saga", o.getId(), cr.status());
                     // Tái tạo sự kiện từ trạng thái Payment để đẩy saga đi tiếp (idempotent).
                     orderService.onPaymentSettled(new PaymentSettledEvent(

@@ -74,7 +74,10 @@ paymentId,clientSecret?,failureReason?}`. `clientSecret` **chỉ** ở response 
 nếu order KHÔNG ở AWAITING_PAYMENT → bỏ qua (idempotent, at-least-once)
 succeeded → Inventory commit(holdId) → order.markPaid(paymentId) → outbox OrderCompleted
            └─ commit 404 (hold hết hạn) → Payment refund(orderId) → order.cancel() = CANCELLED
-failed/canceled → Inventory delete hold (nhả) → order.failPayment(reason) = PAYMENT_FAILED
+failed → Payment POST /internal/cancellations (HỦY PI TRƯỚC — chặn "tiền mồ côi", saga §3.1)
+           ├─ 409 (PI đã kịp succeeded/processing) → GIỮ AWAITING_PAYMENT, chờ webhook chốt
+           └─ OK → Inventory delete hold (nhả) → order.failPayment(reason) = PAYMENT_FAILED
+canceled (PI đã hủy sẵn ở Stripe) → nhả chỗ → PAYMENT_FAILED (khỏi gọi cancel)
 ```
 
 ## Job nền

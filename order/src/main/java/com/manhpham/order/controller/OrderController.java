@@ -29,7 +29,10 @@ public class OrderController {
 
     private final OrderService orders;
 
-    /** Đặt mua (chạy saga). 201 + đơn ở trạng thái cuối (PAID/REJECTED/PAYMENT_FAILED). */
+    /**
+     * Đặt mua (khởi động saga). 201: happy path trả AWAITING_PAYMENT + clientSecret (FE xác
+     * nhận qua Payment Element, kết quả chốt từ webhook); nhánh lỗi trả REJECTED/PAYMENT_FAILED.
+     */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderResponse place(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody PlaceOrderRequest request) {

@@ -21,4 +21,12 @@ public interface PaymentService {
      * hoàn hai lần. 404 nếu chưa có payment.
      */
     ChargeResponse refund(java.util.UUID orderId);
+
+    /**
+     * HỦY PaymentIntent của đơn — bù trừ saga khi thanh toán thất bại và Order bỏ cuộc; Order
+     * phải gọi TRƯỚC khi nhả chỗ (saga-purchase-flow.md §4). Idempotent: đã CANCELED thì trả
+     * lại. Ném {@link com.manhpham.payment.utils.exception.PaymentNotCancellableException}
+     * (409) nếu tiền đã/đang được thu — Order phải giữ đơn chờ webhook chốt. 404 nếu chưa có.
+     */
+    ChargeResponse cancel(java.util.UUID orderId);
 }

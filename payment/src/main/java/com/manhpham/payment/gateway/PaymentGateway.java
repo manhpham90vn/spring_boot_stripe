@@ -27,6 +27,15 @@ public interface PaymentGateway {
      */
     String refund(String paymentIntentId, String idempotencyKey);
 
+    /**
+     * HỦY một PaymentIntent — bù trừ saga khi thanh toán thất bại và Order bỏ cuộc
+     * (saga-purchase-flow.md §4): phải hủy PI TRƯỚC khi nhả chỗ, nếu không khách có thể retry
+     * trả tiền trên đơn đã bỏ ("tiền mồ côi", payment_issue.md 2.14). KHÔNG ném lỗi khi PI
+     * không hủy được vì đã kịp succeeded/processing — trả về trạng thái thật của PI để caller
+     * quyết định. Trả trạng thái Stripe sau khi hủy ({@code "canceled"} nếu hủy thành công).
+     */
+    String cancelIntent(String paymentIntentId);
+
     /** Kết quả tạo intent: id PaymentIntent + client_secret (cho FE xác nhận) + trạng thái. */
     record IntentResult(String paymentIntentId, String clientSecret, Status status) {
         // PROCESSING: đã tạo intent, chờ webhook. FAILED: lỗi nghiệp vụ khi tạo (không retry được).

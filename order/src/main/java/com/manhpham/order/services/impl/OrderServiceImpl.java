@@ -32,7 +32,8 @@ import java.util.UUID;
  *            (saga DỪNG; client xác nhận thẻ qua Payment Element, kết quả về từ webhook)
  *  onPaymentSettled():  SUCCEEDED → chốt SOLD + PAID + phát OrderCompleted
  *                       SUCCEEDED nhưng hold hết hạn → refund + nhả chỗ + CANCELLED (bù trừ §4)
- *                       FAILED    → nhả chỗ + PAYMENT_FAILED   (bù trừ)
+ *                       FAILED/CANCELED → hủy PI (nếu chưa) + nhả chỗ + PAYMENT_FAILED (bù trừ §4;
+ *                                         PI không hủy được vì tiền đã/đang thu → giữ AWAITING_PAYMENT)
  * </pre>
  *
  * <p>place() KHÔNG bọc một {@code @Transactional} lớn: mỗi bước commit riêng (step-wise saga)
@@ -149,9 +150,24 @@ public class OrderServiceImpl implements OrderService {
                     order.getCurrency())));
             log.info("Order {} PAID (payment {})", order.getId(), event.paymentId());
         } else {
+            // Bù trừ (saga §4): HỦY PaymentIntent TRƯỚC rồi mới nhả chỗ — nếu nhả trước, khách
+            // retry trên cùng PI (Payment Element) có thể trả tiền cho đơn đã bỏ = "tiền mồ côi"
+            // (payment_issue.md 2.14). Event CANCELED nghĩa là PI đã hủy sẵn ở Stripe → khỏi gọi.
+            if (!"CANCELED".equals(event.status())) {
+                try {
+                    payment.cancelIntent(order.getId());
+                } catch (HttpClientErrorException.Conflict piNotCancellable) {
+                    // PI đã kịp succeeded/processing (khách xác nhận đúng lúc fail) → GIỮ
+                    // AWAITING_PAYMENT; webhook succeeded / reconciliation sẽ chốt tiếp.
+                    log.info("Order {} PI không hủy được (tiền đã/đang thu) — giữ AWAITING_PAYMENT",
+                            order.getId());
+                    return;
+                }
+                // Lỗi tạm thời (5xx/timeout) ném ra ngoài → rollback, Kafka redeliver (idempotent).
+            }
             inventory.release(order.getHoldId()); // bù trừ
             order.failPayment("Thanh toán thất bại");
-            log.info("Order {} PAYMENT_FAILED, nhả chỗ {}", order.getId(), order.getHoldId());
+            log.info("Order {} PAYMENT_FAILED, đã hủy PI + nhả chỗ {}", order.getId(), order.getHoldId());
         }
     }
 

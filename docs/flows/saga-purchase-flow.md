@@ -1,8 +1,9 @@
 # Saga — luồng mua vé (design)
 
-> **Trạng thái:** THIẾT KẾ. Luồng mua xuyên Order/Inventory/Payment + bù trừ. Ràng buộc gốc:
-> [`/CLAUDE.md`](../../CLAUDE.md). Liên quan: [`inventory-no-oversell.md`](inventory-no-oversell.md),
-> [`payment-stripe-flow.md`](payment-stripe-flow.md), [`impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md),
+> **Trạng thái:** THIẾT KẾ, đã triển khai lát cắt thẻ. Luồng mua xuyên Order/Inventory/Payment
+> + bù trừ. Ràng buộc gốc: [`/CLAUDE.md`](../../CLAUDE.md). Liên quan:
+> [`inventory-no-oversell.md`](inventory-no-oversell.md), [`payment-stripe-flow.md`](payment-stripe-flow.md),
+> [`impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md),
 > [`outbox-debezium.md`](../standards/outbox-debezium.md), [`services/04-order.md`](../services/04-order.md).
 
 ---
@@ -18,110 +19,166 @@ Chọn **orchestration** (một nơi điều phối) thay vì choreography (mỗ
 event) vì luồng tiền cần **trình tự rõ ràng + dễ truy vết + dễ bù trừ**. **Order là
 orchestrator**, sở hữu trạng thái saga.
 
-## 2. Happy path
+## 2. Happy path — HAI PHA
+
+Saga chạy **hai pha tách rời**. Pha A đồng bộ trong request của client; pha B bất đồng bộ,
+kích hoạt bởi webhook Stripe (có thể sau vài giây với thẻ, **vài giờ→ngày** với Konbini).
+
+### Pha A — request `POST /api/order` (đồng bộ, `OrderServiceImpl#place`)
 
 ```
 Client ──POST /api/order──▶ ORDER (orchestrator)
                               │
-            (1) tạo Order = PENDING (DB order) + lưu saga state
+    (1) GET catalog /internal/ticket-types/…  → LẤY GIÁ ở server (không tin giá client gửi)
+    (2) tạo Order = PENDING (DB order, commit riêng)
+    (3) POST inventory /internal/holds        → giữ chỗ Redis, trả holdId
+          └─ 409 hết vé → Order = REJECTED, trả về luôn
+    (4) POST payment /internal/payment-intents → tạo PaymentIntent (Stripe), trả clientSecret
+          └─ lỗi → BÙ TRỪ: nhả chỗ → Order = PAYMENT_FAILED, trả về luôn
+    (5) Order = AWAITING_PAYMENT (lưu holdId, paymentId, piId) + COMMIT
                               │
-            (2) POST inventory /internal/holds  ───▶ INVENTORY: giữ chỗ (Redis), trả holdId
-                              │  ◀── 200 held
-            (3) POST payment /internal/payment-intents ─▶ PAYMENT: tạo PaymentIntent (Stripe)
-                              │  ◀── 200 { clientSecret, PROCESSING } → client xác nhận, CHỜ webhook
-            (4) confirm (sau webhook succeeded): Order = PAID
-                + Inventory commit SOLD (Redis→Postgres)
-                + outbox.fire(OrderCompleted)   ───▶ Kafka order.events
-                              │                         ├─▶ TICKET: phát vé (QR ký số)
-                              ▼                         └─▶ NOTIFICATION: gửi vé qua mail
-                          200 Created (orderId)
+                              ▼
+        201 { orderId, status: AWAITING_PAYMENT, clientSecret }
 ```
 
-- Bước (2)(3) là **gọi đồng bộ** service↔service qua `/internal/**` (xem
+**Request kết thúc Ở ĐÂY** — client cầm `clientSecret` xác nhận thẻ bằng **Payment Element**
+(±3DS). Saga **dừng** ở `AWAITING_PAYMENT` chờ kết quả từ webhook. KHÔNG bao giờ trả PAID
+trong request này.
+
+### Pha B — webhook chốt kết quả (bất đồng bộ, `OrderServiceImpl#onPaymentSettled`)
+
+```
+Stripe ──webhook──▶ PAYMENT: verify chữ ký + idempotent + đối chiếu amount
+                       │  settle payment (DB) + outbox.fire(PaymentSettled)
+                       ▼
+                    Kafka payment.events
+                       │
+                       ▼
+                    ORDER #onPaymentSettled (idempotent: chỉ xử lý đơn AWAITING_PAYMENT)
+                       ├─ SUCCEEDED → Inventory commit SOLD (Redis→Postgres) → Order = PAID
+                       │                + outbox.fire(OrderCompleted) ──▶ Kafka order.events
+                       │                      ├─▶ TICKET: phát vé (QR ký số)
+                       │                      └─▶ NOTIFICATION: gửi vé qua mail
+                       └─ FAILED/CANCELED → bù trừ (§4): hủy PI → nhả chỗ → PAYMENT_FAILED
+```
+
+- Bước (3)(4) pha A là **gọi đồng bộ** qua `/internal/**` (xem
   [`API-CONVENTIONS.md`](../standards/API-CONVENTIONS.md)).
-- Bước (4) phát **event async** qua **outbox** (xem [`outbox-debezium.md`](../standards/outbox-debezium.md))
-  để Ticket/Notification xử lý — KHÔNG gọi đồng bộ (giảm thời gian giữ chỗ, tách rời).
+- Kết quả thanh toán về Order qua **Kafka `payment.events`** (Payment phát bằng outbox) —
+  KHÔNG gọi đồng bộ ngược. Tương tự, Order báo Ticket/Notification qua **`order.events`**
+  (xem [`outbox-debezium.md`](../standards/outbox-debezium.md)).
+- **Lưới an toàn**: nếu event `payment.events` bị mất, `OrderReconciliationJob` định kỳ tìm
+  đơn kẹt `AWAITING_PAYMENT` quá lâu, **hỏi lại Payment** (`GET /internal/payment-intents/by-order`)
+  rồi tự đẩy saga đi tiếp qua chính `onPaymentSettled` (idempotent).
 
-### 2.1 ĐỒNG BỘ (thẻ) vs BẤT ĐỒNG BỘ (Konbini/Furikomi)
+### 2.1 Thẻ vs Konbini/Furikomi — CÙNG một khung, khác thời gian chờ
 
-Hệ thống hỗ trợ đa phương thức → bước (3)(4) **rẽ hai nhánh**:
+Hai phương thức đi **cùng pha A/pha B** ở trên, chỉ khác nhịp:
 
-- **Thẻ (nhanh):** bước (3) tạo PaymentIntent, trả `clientSecret`; client xác nhận
-  bằng **Payment Element** (±3DS). Sau khi **webhook `payment_intent.succeeded`** xác
-  nhận → chạy bước (4) COMMIT + phát vé. KHÔNG fulfill ngay tại bước (3).
-- **Konbini/Furikomi (bất đồng bộ):** bước (3) chỉ tạo PaymentIntent ở trạng thái
-  `processing` và trả mã/hướng dẫn cho khách. Đơn chuyển **`AWAITING_PAYMENT`**, **giữ
-  chỗ vẫn còn** (TTL = hạn thanh toán, [`inventory §3.1`](inventory-no-oversell.md)).
-  **CHỈ chạy bước (4)** khi nhận **`checkout.session.async_payment_succeeded` /
-  `payment_intent.succeeded`** (có thể sau vài giờ→ngày). Nếu hết hạn/không trả →
-  `async_payment_failed` → CANCELLED + nhả chỗ + restock + báo khách.
+- **Thẻ (nhanh):** client xác nhận ngay bằng Payment Element → webhook
+  `payment_intent.succeeded` về sau vài giây → pha B chạy gần như liền mạch.
+- **Konbini/Furikomi (chậm):** bước (4) trả mã/hướng dẫn nộp tiền; đơn nằm ở
+  `AWAITING_PAYMENT` **vài giờ→ngày** (giữ chỗ TTL = hạn thanh toán,
+  [`inventory §3.1`](inventory-no-oversell.md)). Webhook `payment_intent.succeeded` /
+  `payment_intent.payment_failed` (hết hạn không nộp) về muộn → pha B chạy lúc đó.
+  *(Chưa triển khai — cần thêm bước tích hợp riêng, xem
+  [`impl/01-payment-real-stripe.md`](../impl/01-payment-real-stripe.md) §0.)*
 
-> 🔑 **Webhook là nguồn sự thật cho CẢ hai nhánh** — không bao giờ phát vé chỉ vì đã *tạo*
-> PaymentIntent (payment_issue.md 2.4/2.6/2.7). Thẻ chỉ nhanh hơn, bản chất xác nhận giống nhau.
+> 🔑 **Webhook là nguồn sự thật cho CẢ hai** ([`payment_issue.md`](../payment-ref/payment_issue.md)
+> 2.4/2.6/2.7) — không bao giờ phát vé chỉ vì đã *tạo* PaymentIntent. Thẻ chỉ nhanh hơn,
+> bản chất xác nhận giống nhau.
 
 ## 3. State machine của Order
 
-```
-                         ┌─(thẻ: succeeded ngay qua webhook)──────────────┐
-PENDING ──giữ chỗ OK──┤                                                  ▼
-   │   ──tạo PI──▶ AWAITING_PAYMENT ──(async_payment_succeeded)──▶ PAID ──▶ COMPLETED (đã phát vé)
-   │                      │
-   ├─(giữ chỗ thất bại / hết vé)──────────────▶ REJECTED
-   ├─(async hết hạn / payment_failed)─────────▶ CANCELLED  → nhả chỗ + restock
-   └─(huỷ / PI canceled)──────────────────────▶ CANCELLED  → nhả chỗ; refund nếu đã thu
-```
-- **`AWAITING_PAYMENT`**: đã tạo PaymentIntent, chờ tiền — đặc biệt quan trọng với async
-  (đơn ở đây **vài giờ→ngày** là bình thường, đừng để job dọn `pending` giết oan).
-- **`payment_failed` KHÔNG phải trạng thái cuối** (payment_issue.md 2.14): với thẻ, khách có
-  thể thử lại trên cùng PI. Khi saga **bỏ cuộc** (hết hạn/khách huỷ) phải **CANCEL
-  PaymentIntent** rồi mới nhả chỗ — tránh khách trả tiền sau đó thành "tiền mồ côi".
+Khớp `OrderStatus.java` (nguồn: `order/…/entities/OrderStatus.java`):
 
-Order lưu **trạng thái saga** (đang ở bước nào, holdId, paymentIntentId, phương thức) để
-**resume** sau restart và biết phải bù trừ bước nào.
+```
+PENDING ──(3) hết vé──────────────────────────▶ REJECTED                    (cuối)
+   │
+   ├──(4) tạo PI lỗi → nhả chỗ────────────────▶ PAYMENT_FAILED              (cuối)
+   │
+   └──(5) hold OK + PI OK──▶ AWAITING_PAYMENT
+                                  │
+                                  ├─webhook succeeded + commit SOLD OK──▶ PAID
+                                  │                                        └──▶ COMPLETED *
+                                  ├─webhook succeeded NHƯNG hold hết hạn
+                                  │    → refund + nhả chỗ────────────────▶ CANCELLED       (cuối)
+                                  └─webhook failed/canceled
+                                       → hủy PI + nhả chỗ────────────────▶ PAYMENT_FAILED  (cuối)
+```
+
+- **`AWAITING_PAYMENT`**: đã giữ chỗ + đã tạo PaymentIntent, chờ tiền. Với async đơn nằm đây
+  **vài giờ→ngày** là bình thường — job dọn dẹp KHÔNG được giết nhầm; chỉ
+  `OrderReconciliationJob` hỏi lại Payment rồi quyết.
+- **`PAYMENT_FAILED`**: thất bại **trước khi thu được tiền** — đã bù trừ (nhả chỗ). Khác với
+  **`CANCELLED`**: **đã thu tiền** nhưng không chốt được SOLD — đã bù trừ (refund + nhả chỗ).
+- **`COMPLETED`** (*): trạng thái **thiết kế, CHƯA có trong code** — sẽ chuyển từ PAID khi
+  Ticket xác nhận đã phát vé (feedback Ticket→Order chưa wire; slice hiện tại dừng ở PAID).
+
+### 3.1 Chính sách khi thanh toán thất bại: fail-fast + HỦY PaymentIntent
+
+Với thẻ, `payment_intent.payment_failed` không phải chung cuộc về phía Stripe — khách *có
+thể* thử lại trên cùng PI ([`payment_issue.md`](../payment-ref/payment_issue.md) 2.14). Hệ này
+**chọn fail-fast** (phù hợp flash sale: nhả tồn kho sớm cho người xếp hàng sau): fail lần
+đầu = đơn kết thúc. Muốn mua lại → đặt đơn mới.
+
+Fail-fast bắt buộc **thứ tự bù trừ**: **HỦY PaymentIntent TRƯỚC, nhả chỗ SAU**. Nếu nhả chỗ
+mà PI còn sống, khách retry trên Payment Element cũ có thể **trả tiền cho đơn đã bỏ** →
+"tiền mồ côi" (thu tiền, không vé, không refund). Cụ thể (`onPaymentSettled`, nhánh FAILED):
+
+1. Gọi `POST payment /internal/cancellations {orderId}` (idempotent).
+2. Payment hủy PI ở Stripe. **PI đã kịp `succeeded`/`processing`** (khách xác nhận đúng lúc
+   fail) → Payment trả **409** → Order **GIỮ `AWAITING_PAYMENT`**, không nhả chỗ — webhook
+   `succeeded` (hoặc reconciliation) sẽ chốt đơn theo nhánh thành công.
+3. Hủy OK → nhả chỗ → `PAYMENT_FAILED`.
+4. Lỗi tạm thời (5xx/timeout) khi hủy → ném ra cho Kafka redeliver, thử lại (idempotent).
 
 ## 4. Bù trừ (compensating transactions)
 
-| Thất bại tại | Đã làm được | Bù trừ |
-|--------------|-------------|--------|
-| Giữ chỗ (2) | chưa gì | Order → REJECTED (không cần bù) |
-| Thu tiền (3) | đã giữ chỗ | **nhả chỗ** (Inventory `DELETE /internal/holds/{id}`) → Order PAYMENT_FAILED |
-| Xác nhận (4) | đã giữ chỗ + đã thu tiền | **refund** (Payment) + **nhả chỗ** → Order CANCELLED |
+| Thất bại tại | Đã làm được | Bù trừ | Trạng thái |
+|--------------|-------------|--------|------------|
+| Giữ chỗ (3) | chưa gì | không cần | REJECTED |
+| Tạo PaymentIntent (4) | đã giữ chỗ | nhả chỗ (`DELETE /internal/holds/{id}`) | PAYMENT_FAILED |
+| Webhook failed/canceled | đã giữ chỗ + PI đang sống | **hủy PI** (`POST /internal/cancellations`) → nhả chỗ (§3.1) | PAYMENT_FAILED |
+| Commit SOLD sau succeeded (hold hết hạn) | đã giữ chỗ + **đã thu tiền** | **refund** (`POST /internal/refunds`, idempotency key `refund:order:<orderId>`) → nhả chỗ | CANCELLED |
 
-Bù trừ phải **idempotent** và nên chạy bền (retry) — đẩy vào hàng đợi/scheduler nếu cần,
-không để treo trên request của client.
-
-> **Đã triển khai:** nhánh "Xác nhận (4)" — khi webhook `succeeded` nhưng `Inventory commit`
-> trả **404** (hold hết hạn) → Order gọi `POST payment /internal/refunds` (idempotency key
-> `refund:order:<orderId>`) rồi `order.cancel()` = **CANCELLED**. Lỗi commit tạm thời (5xx/timeout)
-> **KHÔNG** refund — để Kafka redeliver thử lại (idempotent). Xem `OrderServiceImpl#onPaymentSettled`,
-> [`services/05-payment.md`](../services/05-payment.md) §Refund.
+Bù trừ phải **idempotent** và chạy bền: lỗi tạm thời (5xx/timeout) khi bù trừ → **KHÔNG**
+nuốt, ném ra để Kafka redeliver thử lại; chỉ lỗi chung cuộc (404 hold, 409 không hủy được)
+mới rẽ nhánh. Cả bốn hàng đã triển khai — xem `OrderServiceImpl#place/#onPaymentSettled`,
+[`services/05-payment.md`](../services/05-payment.md) §Refund/§Cancel.
 
 ## 5. Idempotency xuyên service (BẮT BUỘC)
 
-Mạng có thể timeout rồi retry → mỗi lời gọi service phải **an toàn khi lặp**:
+Mạng có thể timeout rồi retry, Kafka là at-least-once → mỗi bước phải **an toàn khi lặp**:
 - Order sinh **một `orderId` (UUID)** sớm; dùng làm **idempotency key** cho mọi lời gọi
   xuống Inventory/Payment.
 - Inventory: "giữ chỗ cho orderId này" — gọi lại trả về **cùng holdId**, không giữ thêm.
-- Payment: dùng **Stripe idempotency key** = orderId → Stripe không thu tiền hai lần.
-- Ticket consumer: "đã phát vé cho orderId chưa?" trước khi phát (chống trùng do
-  at-least-once của Kafka).
+- Payment: Stripe idempotency key theo đơn (`order:<orderId>`, `refund:order:<orderId>`) →
+  Stripe không tạo hai PI / không hoàn hai lần; hủy PI idempotent (đã CANCELED → trả lại).
+- Order consumer (`onPaymentSettled`): chỉ tác động khi đơn còn `AWAITING_PAYMENT` — event
+  trùng/đến muộn bị bỏ qua.
+- Ticket consumer: "đã phát vé cho orderId chưa?" trước khi phát.
 
 ## 6. Ranh giới & quy ước
 
 - **Client** chỉ nói chuyện với `/api/order/**` (qua gateway). Không gọi thẳng Inventory/Payment.
-- **Order ↔ Inventory/Payment**: API nội bộ `/internal/**` (gọi qua DNS, không qua gateway;
-  rào bằng NetworkPolicy — xem [`deployment-k8s.md`](../ops/deployment-k8s.md)).
-- **Order → Ticket/Notification**: event `OrderCompleted` qua outbox+Kafka (`order.events`).
-- Order sở hữu **đơn + saga state**, dùng **outbox** để phát event (không publish Kafka trực tiếp).
+- **Order → Inventory/Payment**: API nội bộ `/internal/**` (DNS, không qua gateway; rào bằng
+  NetworkPolicy — xem [`deployment-k8s.md`](../ops/deployment-k8s.md)).
+- **Payment → Order**: event `PaymentSettled` qua outbox+Kafka (**`payment.events`**) — kết
+  quả webhook KHÔNG gọi đồng bộ ngược vào Order.
+- **Order → Ticket/Notification**: event `OrderCompleted` qua outbox+Kafka (**`order.events`**).
+- Order sở hữu **đơn + saga state** (`status`, `holdId`, `paymentId`, `stripePiId`) để
+  **resume** sau restart và biết phải bù trừ bước nào; phát event luôn qua **outbox**.
 
 ## 7. Cạm bẫy
-1. **Đừng giữ chỗ vô hạn.** Hold có **TTL** (Inventory) — nếu saga chết giữa chừng, chỗ tự
+1. **Đừng giữ chỗ vô hạn.** Hold có **TTL** (Inventory) — saga chết giữa chừng thì chỗ tự
    nhả, không khoá tồn kho vĩnh viễn.
 2. **Thu tiền là bước khó hoàn tác nhất** → đặt SAU khi đã giữ chỗ chắc chắn; refund là bù trừ.
-3. **Xác nhận SOLD chỉ sau khi tiền chắc chắn** (hoặc qua webhook Stripe) — tránh phát vé
-   rồi mới biết thanh toán hỏng.
-4. **Saga phải resume được** sau restart Order (đọc saga state từ DB, tiếp tục/bù trừ).
-5. Mọi bước **idempotent** (xem §5).
+3. **Xác nhận SOLD chỉ sau webhook** — tránh phát vé rồi mới biết thanh toán hỏng.
+4. **Nhả chỗ khi PI còn sống = "tiền mồ côi"** — luôn hủy PI trước (§3.1).
+5. **Saga phải resume được** sau restart Order: đọc saga state từ DB + reconciliation job
+   hỏi lại Payment cho đơn kẹt.
+6. Mọi bước **idempotent** (§5).
 
 ## 8. Thứ tự triển khai
 Lát cắt **thẻ** trước để tiền chạy end-to-end (xem

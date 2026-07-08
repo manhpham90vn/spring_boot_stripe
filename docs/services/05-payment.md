@@ -40,9 +40,10 @@ tham chiếu Stripe. KHÔNG có `MockPaymentGateway`. Chi tiết triển khai:
 | POST | `/internal/payment-intents` | `{orderId, amountMinor, currency}` | `{paymentId, stripePiId, clientSecret, status:"PROCESSING"}` |
 | GET | `/internal/payment-intents/by-order/{orderId}` | – | `{paymentId,orderId,status,stripePiId,amountMinor,currency}` · 404 |
 | POST | `/internal/refunds` | `{orderId}` | `{paymentId,orderId,status:"REFUNDED",reference,stripePiId}` · 404 |
+| POST | `/internal/cancellations` | `{orderId}` | `{paymentId,orderId,status:"CANCELED",reference,stripePiId}` · 404 · **409** không hủy được (tiền đã/đang thu) |
 
 > Quy ước path nội bộ **không lặp tên service** (xem [`API-CONVENTIONS.md §4`](../standards/API-CONVENTIONS.md)):
-> resource là `payment-intents`/`refunds`, KHÔNG phải `payments`.
+> resource là `payment-intents`/`refunds`/`cancellations`, KHÔNG phải `payments`.
 
 Tạo intent: `PaymentIntent.create` với `automatic_payment_methods.enabled=true`,
 `metadata.order_id`, header `Idempotency-Key="order:<orderId>"`. **KHÔNG** phát
@@ -60,11 +61,11 @@ Quy trình (1 `@Transactional`):
 4. `payment.settle(status, piId)` + outbox `PaymentSettled` + lưu processed_events.
 5. Trả **2xx nhanh** (Stripe coi non-2xx là fail → retry).
 
-Event xử lý:
-- **Thẻ:** `payment_intent.succeeded`→SUCCEEDED · `payment_intent.payment_failed`→FAILED
+Event xử lý (Payment Intents — hệ này KHÔNG dùng Checkout Session):
+- `payment_intent.succeeded`→SUCCEEDED · `payment_intent.payment_failed`→FAILED
   · `payment_intent.canceled`→CANCELED.
-- **Async (Konbini/Furikomi):** `checkout.session.async_payment_succeeded`→SUCCEEDED ·
-  `checkout.session.async_payment_failed`→FAILED · `payment_intent.processing`→PROCESSING.
+- **Async (Konbini/Furikomi)** dùng CÙNG các event trên, chỉ về muộn hơn (vài giờ→ngày);
+  `payment_intent.processing`→PROCESSING (chưa phát settled) — bổ sung ở increment sau.
 
 Body lấy **raw** để verify đúng bytes. Đơn async để `AWAITING_PAYMENT` vài giờ→ngày là
 bình thường (TTL hold theo phương thức — xem [`inventory-no-oversell.md §3.1`](../flows/inventory-no-oversell.md)).
@@ -75,7 +76,7 @@ bình thường (TTL hold theo phương thức — xem [`inventory-no-oversell.m
 | requires_payment_method / requires_confirmation / requires_action / processing | `PROCESSING` | không |
 | succeeded (webhook) | `SUCCEEDED` | có (succeeded) |
 | payment_failed (webhook) | `FAILED` | có (failed) |
-| canceled (webhook) | `CANCELED` | có (failed) |
+| canceled (webhook) | `CANCELED` | có (canceled) |
 
 ## Resilience (giới hạn Stripe ~100–200 req/s)
 - `@RateLimiter("stripe")`: 100/s, chờ tối đa 2s rồi từ chối.
@@ -88,6 +89,15 @@ bình thường (TTL hold theo phương thức — xem [`inventory-no-oversell.m
 qua Stripe (`Refund.create`), `Idempotency-Key="refund:order:<orderId>"` → gọi lại KHÔNG hoàn hai
 lần. Chỉ hoàn khi payment đang `SUCCEEDED`; đã `REFUNDED` → trả lại nguyên trạng (idempotent).
 Cùng `@RateLimiter`/`@Retry("stripe")` như tạo intent.
+
+## Cancel (bù trừ saga §3.1/§4)
+`POST /internal/cancellations {orderId}` — Order gọi khi **thanh toán thất bại và saga bỏ
+cuộc**, TRƯỚC khi nhả chỗ (tránh "tiền mồ côi": khách retry trên PI cũ trả tiền cho đơn đã
+bỏ — xem [`saga-purchase-flow.md §3.1`](../flows/saga-purchase-flow.md)). Hủy PI ở Stripe
+(`cancellation_reason=abandoned`). Idempotent: đã `CANCELED` → trả lại nguyên trạng. **409**
+nếu tiền đã/đang được thu (payment `SUCCEEDED`/`REFUNDED`, hoặc PI phía Stripe đã
+`succeeded`/`processing` — race với client xác nhận) → Order phải GIỮ đơn `AWAITING_PAYMENT`
+chờ webhook chốt. Cùng `@RateLimiter`/`@Retry("stripe")` như tạo intent.
 
 ## Idempotency (nhiều tầng)
 1. `order_id` UNIQUE ⇒ 1 payment/đơn.

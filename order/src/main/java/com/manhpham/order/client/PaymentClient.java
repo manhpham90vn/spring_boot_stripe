@@ -43,6 +43,21 @@ public class PaymentClient {
                 .body(ChargeResult.class);
     }
 
+    /**
+     * HỦY PaymentIntent của đơn (saga bù trừ §4: thanh toán thất bại, Order bỏ cuộc) — gọi
+     * TRƯỚC khi nhả chỗ. Idempotent theo orderId. Ném
+     * {@link org.springframework.web.client.HttpClientErrorException.Conflict} (409) nếu tiền
+     * đã/đang được thu — caller phải GIỮ đơn ở AWAITING_PAYMENT chờ webhook chốt.
+     */
+    public ChargeResult cancelIntent(UUID orderId) {
+        return http.post()
+                .uri("/internal/cancellations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("orderId", orderId))
+                .retrieve()
+                .body(ChargeResult.class);
+    }
+
     /** Kết quả tạo intent. status: PROCESSING (chờ webhook) | FAILED (lỗi tạo, cần bù trừ). */
     public record IntentResult(UUID paymentId, String stripePiId, String clientSecret, String status) {
         public boolean failed() {

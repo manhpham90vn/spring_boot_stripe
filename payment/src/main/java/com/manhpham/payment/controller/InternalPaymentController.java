@@ -1,5 +1,6 @@
 package com.manhpham.payment.controller;
 
+import com.manhpham.payment.dto.CancelRequest;
 import com.manhpham.payment.dto.ChargeResponse;
 import com.manhpham.payment.dto.CreateIntentRequest;
 import com.manhpham.payment.dto.IntentResponse;
@@ -44,5 +45,14 @@ public class InternalPaymentController {
     @PostMapping("/refunds")
     public ChargeResponse refund(@Valid @RequestBody RefundRequest request) {
         return payments.refund(request.orderId());
+    }
+
+    /**
+     * HỦY PaymentIntent của đơn (saga bù trừ khi thanh toán thất bại — Order gọi TRƯỚC khi nhả
+     * chỗ). Idempotent theo orderId. 409 nếu tiền đã/đang được thu (Order phải chờ webhook).
+     */
+    @PostMapping("/cancellations")
+    public ChargeResponse cancel(@Valid @RequestBody CancelRequest request) {
+        return payments.cancel(request.orderId());
     }
 }

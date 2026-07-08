@@ -8,6 +8,7 @@ import com.manhpham.payment.entities.PaymentStatus;
 import com.manhpham.payment.gateway.PaymentGateway;
 import com.manhpham.payment.repositories.jpa.PaymentRepository;
 import com.manhpham.payment.services.PaymentService;
+import com.manhpham.payment.utils.exception.PaymentNotCancellableException;
 import com.manhpham.payment.utils.exception.PaymentNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -102,6 +103,38 @@ public class PaymentServiceImpl implements PaymentService {
         String refundRef = gateway.refund(payment.getStripePiId(), "refund:order:" + orderId);
         payment.refund(refundRef);
         log.info("Payment order={} -> REFUNDED ref={}", orderId, refundRef);
+        return ChargeResponse.from(payment);
+    }
+
+    @Override
+    @Transactional
+    public ChargeResponse cancel(UUID orderId) {
+        Payment payment = payments.findByOrderId(orderId)
+                .orElseThrow(() -> new PaymentNotFoundException(orderId));
+
+        // Idempotent: đã hủy rồi → trả lại, KHÔNG gọi Stripe lần nữa (saga retry an toàn).
+        if (payment.getStatus() == PaymentStatus.CANCELED) {
+            log.info("cancel idempotent hit order={} (đã CANCELED)", orderId);
+            return ChargeResponse.from(payment);
+        }
+        // Tiền đã thu/đã hoàn → KHÔNG hủy được; Order phải giữ đơn chờ luồng succeeded/refund.
+        if (payment.isSucceeded() || payment.isRefunded()) {
+            throw new PaymentNotCancellableException(orderId, payment.getStatus().name());
+        }
+        // Chưa từng tạo được PI ở Stripe → chỉ đóng bản ghi local.
+        if (payment.getStripePiId() == null) {
+            payment.settle(PaymentStatus.CANCELED, null);
+            log.info("Payment order={} -> CANCELED (chưa có PI)", orderId);
+            return ChargeResponse.from(payment);
+        }
+
+        String stripeStatus = gateway.cancelIntent(payment.getStripePiId());
+        if (!"canceled".equals(stripeStatus)) {
+            // PI đã kịp succeeded/processing (khách xác nhận đúng lúc hủy) → webhook sẽ chốt.
+            throw new PaymentNotCancellableException(orderId, stripeStatus);
+        }
+        payment.settle(PaymentStatus.CANCELED, payment.getStripePiId());
+        log.info("Payment order={} -> CANCELED (PI {})", orderId, payment.getStripePiId());
         return ChargeResponse.from(payment);
     }
 }

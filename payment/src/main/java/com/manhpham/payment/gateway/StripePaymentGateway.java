@@ -108,6 +108,37 @@ public class StripePaymentGateway implements PaymentGateway {
         }
     }
 
+    @Override
+    @RateLimiter(name = "stripe")
+    @Retry(name = "stripe") // retry-exceptions=StripeTransientException → chỉ lỗi tạm thời; hết lần thì ném ra
+    public String cancelIntent(String paymentIntentId) {
+        RequestOptions options = RequestOptions.builder().setApiKey(apiKey).build();
+        try {
+            PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId, options);
+            if (!"canceled".equals(pi.getStatus())) {
+                // cancel chỉ hợp lệ khi PI chưa succeeded/processing; race với client xác nhận → catch dưới.
+                pi = pi.cancel(Map.of("cancellation_reason", "abandoned"), options);
+            }
+            log.info("[STRIPE] cancel PI={} -> {}", paymentIntentId, pi.getStatus());
+            return pi.getStatus();
+        } catch (StripeException e) {
+            if (isRetryable(e)) {
+                throw new StripeTransientException(e); // @Retry backoff cho lỗi tạm thời
+            }
+            // Lỗi nghiệp vụ = PI vừa chuyển trạng thái (khách xác nhận đúng lúc hủy) → hỏi lại
+            // trạng thái thật để caller quyết định (succeeded/processing → KHÔNG fail đơn).
+            try {
+                String live = PaymentIntent.retrieve(paymentIntentId, options).getStatus();
+                log.warn("[STRIPE] cancel PI={} không được ({}), trạng thái thật={}",
+                        paymentIntentId, e.getMessage(), live);
+                return live;
+            } catch (StripeException retrieveError) {
+                throw new IllegalStateException(
+                        "Stripe cancel thất bại PI=" + paymentIntentId + ": " + e.getMessage(), e);
+            }
+        }
+    }
+
     /** Fallback khi HẾT retry (lỗi tạm thời kéo dài) → FAILED; reconciliation phân xử (2.18/3.4). */
     @SuppressWarnings("unused") // gọi bởi Resilience4j qua tên
     private IntentResult createIntentFallback(UUID orderId, long amountMinor, String currency,
